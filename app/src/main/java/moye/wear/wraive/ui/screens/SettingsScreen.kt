@@ -67,7 +67,7 @@ fun SettingsScreen(
                 }
             }
             item(key = "about") {
-                WearActionButton("关于 Wraive", onAbout, icon = Icons.Default.Info)
+                WearActionButton("关于 Wraive+", onAbout, icon = Icons.Default.Info)
             }
         }
         if (section == SettingsSection.MODELS) {

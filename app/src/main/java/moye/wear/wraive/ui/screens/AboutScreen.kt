@@ -3,6 +3,8 @@ package moye.wear.wraive.ui.screens
 import android.os.Build
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,7 +53,7 @@ import moye.wear.wraive.ui.tr
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 
-private const val SOURCE_URL = "https://github.com/youshen2/Wraive"
+private const val SOURCE_URL = "https://github.com/Foxelf-Studio/WraivePlus"
 
 @Composable
 fun AboutScreen() {
@@ -59,13 +61,25 @@ fun AboutScreen() {
     WearListScreen("关于软件") {
         item(key = "app-identity") { AppIdentity() }
         item(key = "developer-section") { AboutSectionLabel("开发者") }
-        item(key = "developer") { DeveloperPanel() }
+        item(key = "developer-foxelf") {
+            DeveloperPanel(R.drawable.foxelf_studio, "Foxelf Studio", "二次开发", SOURCE_URL)
+        }
+        item(key = "developer-moye") {
+            DeveloperPanel(R.drawable.developer_moye, "爅峫", "设计与开发（上游）")
+        }
         item(key = "source-section") { AboutSectionLabel("开源项目") }
         item(key = "source") {
             WearActionButton("开源地址", { showingSource = true },
                 icon = Icons.Default.Code, secondary = SOURCE_URL.removePrefix("https://"))
         }
         item(key = "credits-section") { AboutSectionLabel("参考与致谢") }
+        item(key = "wraive-credit") {
+            AboutPanel("Wraive", Icons.Default.Code) {
+                Text(tr("本项目基于爅峫的 Wraive 修改，感谢原作者。"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface)
+            }
+        }
         item(key = "kelivo-credit") {
             AboutPanel("Kelivo", Icons.Default.Code) {
                 Text(tr("本应用参考了 Kelivo 项目，感谢其带来的启发。"),
@@ -84,7 +98,7 @@ fun AboutScreen() {
             }
         }
         item(key = "footer") {
-            Text("Wraive · By MOYE",
+            Text("Wraive+ · Based on Wraive by MOYE",
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
@@ -174,23 +188,41 @@ private fun AboutPanel(title: String, icon: ImageVector, content: @Composable Co
 }
 
 @Composable
-private fun DeveloperPanel() {
+private fun DeveloperPanel(
+    avatarRes: Int,
+    name: String,
+    role: String,
+    url: String? = null
+) {
+    val uriHandler = LocalUriHandler.current
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
+            .then(
+                if (url == null) {
+                    Modifier
+                } else {
+                    Modifier.clickable { runCatching { uriHandler.openUri(url) } }
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Image(painterResource(R.drawable.developer_moye), contentDescription = tr("开发者头像"),
+        Image(painterResource(avatarRes), contentDescription = tr("开发者头像"),
             contentScale = ContentScale.Crop, modifier = Modifier.size(40.dp).clip(CircleShape))
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("爅峫", style = MaterialTheme.typography.titleSmall,
+            Text(name, style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
-            Text(tr("设计与开发"), style = MaterialTheme.typography.bodySmall,
+            Text(tr(role), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
+            if (url != null) {
+                Text(url.removePrefix("https://"), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

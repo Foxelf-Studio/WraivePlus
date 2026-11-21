@@ -1,17 +1,8 @@
 package moye.wear.wraive.data
 
-import android.graphics.Bitmap
-import android.graphics.Color
-import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moye.wear.wraive.model.AppPreferences
@@ -25,6 +16,12 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 class BackupService(
     private val repository: AppRepository,
@@ -102,24 +99,37 @@ private fun JsonObject.fillMissing(defaults: JsonObject) {
     }
 }
 
-class ProviderQrCodec(private val gson: Gson) {
+class ProviderShareCodec(private val gson: Gson) {
     fun encode(provider: ProviderConfig): String {
-        val data = Base64.encodeToString(
-            gson.toJson(provider).toByteArray(Charsets.UTF_8),
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-        )
-        return "wraive://provider?data=$data"
+        val json = gson.toJson(provider).toByteArray(Charsets.UTF_8)
+        val iv = ByteArray(GCM_IV_BYTES).also { SecureRandom().nextBytes(it) }
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, shareKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+        val encrypted = cipher.doFinal(json)
+        val payload = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(iv + encrypted)
+        return PREFIX_V2 + payload
     }
 
     fun decode(value: String): ProviderConfig {
-        require(value.startsWith("wraive://provider?data=")) { "不是 Wraive 供应商二维码" }
-        val data = value.substringAfter("data=")
-        val json = Base64.decode(data, Base64.URL_SAFE).toString(Charsets.UTF_8)
-        val provider = gson.fromJson(json, ProviderConfig::class.java)
+        val text = value.trim()
+        require(text.isNotEmpty()) { "分享文本为空" }
+        val json = when {
+            text.startsWith(PREFIX_V2) -> decrypt(text.removePrefix(PREFIX_V2))
+            // Older plain-base64 shares stay importable.
+            text.startsWith(PREFIX_V1) -> String(
+                Base64.getUrlDecoder().decode(text.removePrefix(PREFIX_V1)),
+                Charsets.UTF_8
+            )
+            else -> throw IllegalArgumentException("不是 Wraive 分享文本")
+        }
+        val provider = runCatching { gson.fromJson(json, ProviderConfig::class.java) }
+            .getOrNull() ?: error("分享文本解析失败")
         val rotation = runCatching { provider.keyRotation.name }
             .mapCatching(moye.wear.wraive.model.KeyRotationStrategy::valueOf)
             .getOrDefault(moye.wear.wraive.model.KeyRotationStrategy.ROUND_ROBIN)
         return provider.copy(
+            id = provider.id.orEmpty().ifBlank { java.util.UUID.randomUUID().toString() },
             name = provider.name.orEmpty().ifBlank { "Provider" },
             baseUrl = provider.baseUrl.orEmpty(),
             apiKey = provider.availableApiKeys().firstOrNull().orEmpty(),
@@ -131,25 +141,30 @@ class ProviderQrCodec(private val gson: Gson) {
         )
     }
 
-    fun bitmap(value: String, size: Int = 360): Bitmap {
-        val matrix = QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, size, size)
-        val pixels = IntArray(size * size)
-        for (y in 0 until size) {
-            for (x in 0 until size) {
-                pixels[y * size + x] = if (matrix[x, y]) Color.BLACK else Color.WHITE
-            }
+    private fun decrypt(payload: String): String {
+        val bytes = runCatching { Base64.getUrlDecoder().decode(payload) }
+            .getOrElse { throw IllegalArgumentException("分享文本格式无效") }
+        require(bytes.size > GCM_IV_BYTES) { "分享文本已损坏" }
+        val iv = bytes.copyOfRange(0, GCM_IV_BYTES)
+        val body = bytes.copyOfRange(GCM_IV_BYTES, bytes.size)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, shareKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+        val plain = runCatching { cipher.doFinal(body) }.getOrElse {
+            throw IllegalArgumentException("分享文本无法解密，可能已损坏或来自其他应用")
         }
-        return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.RGB_565)
+        return String(plain, Charsets.UTF_8)
     }
 
-    fun decode(bitmap: Bitmap): ProviderConfig {
-        val width = bitmap.width
-        val height = bitmap.height
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        val value = MultiFormatReader().decode(
-            BinaryBitmap(HybridBinarizer(RGBLuminanceSource(width, height, pixels)))
-        ).text
-        return decode(value)
+    private companion object {
+        const val PREFIX_V1 = "wraive://provider?data="
+        const val PREFIX_V2 = "wraive://provider?v=2&data="
+        const val TRANSFORMATION = "AES/GCM/NoPadding"
+        const val GCM_IV_BYTES = 12
+        const val GCM_TAG_BITS = 128
+        val shareKey: SecretKeySpec by lazy {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest("wraive-provider-share-v2".toByteArray(Charsets.UTF_8))
+            SecretKeySpec(digest, "AES")
+        }
     }
 }

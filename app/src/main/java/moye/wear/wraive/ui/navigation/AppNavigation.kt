@@ -152,6 +152,7 @@ fun AppNavigation(graph: AppGraph) {
     fun deleteConversation(conversation: Conversation) {
         scope.launch {
             graph.repository.deleteConversation(conversation.id)
+            graph.draftStore.clear(conversation.id)
             if (navController.currentDestination?.route == "${Routes.CONVERSATION_ACTIONS}/{conversationId}") {
                 navController.popBackStack()
             }
@@ -295,7 +296,8 @@ fun AppNavigation(graph: AppGraph) {
                         onMessageActions = { message ->
                             selectedMessage = message
                             navController.navigate("${Routes.MESSAGE_ACTIONS}/${conversation.id}")
-                        }
+                        },
+                        draftStore = graph.draftStore
                     )
                 }
             }
@@ -380,7 +382,7 @@ fun AppNavigation(graph: AppGraph) {
                     providers = providers,
                     models = models,
                     gson = graph.gson,
-                    qrCodec = graph.providerQrCodec,
+                    shareCodec = graph.providerShareCodec,
                     onCreate = { provider ->
                         scope.launch {
                             graph.repository.upsertProvider(provider)
@@ -402,7 +404,7 @@ fun AppNavigation(graph: AppGraph) {
                         models = models.filter { it.providerId == provider.id },
                         fetchingModels = fetchingModelsFor == provider.id,
                         gson = graph.gson,
-                        qrCodec = graph.providerQrCodec,
+                        shareCodec = graph.providerShareCodec,
                         onSave = { provider ->
                             scope.launch { graph.repository.upsertProvider(provider) }
                         },

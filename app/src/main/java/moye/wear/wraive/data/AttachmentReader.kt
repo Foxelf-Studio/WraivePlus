@@ -4,7 +4,9 @@ import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
+import android.media.ExifInterface
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Html
@@ -14,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moye.wear.wraive.model.Attachment
 import moye.wear.wraive.model.AttachmentKind
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -67,21 +70,23 @@ class AttachmentReader(private val context: Context) {
             ?: error("无法读取图片")
         val bitmap = BitmapFactory.decodeByteArray(original, 0, original.size)
             ?: error("无法解析图片")
-        val scale = minOf(1f, MAX_IMAGE_DIMENSION.toFloat() / maxOf(bitmap.width, bitmap.height))
+        val oriented = applyExifOrientation(bitmap, readExifOrientation(original))
+        if (oriented !== bitmap) bitmap.recycle()
+        val scale = minOf(1f, MAX_IMAGE_DIMENSION.toFloat() / maxOf(oriented.width, oriented.height))
         val resized = if (scale < 1f) {
             Bitmap.createScaledBitmap(
-                bitmap,
-                (bitmap.width * scale).roundToInt(),
-                (bitmap.height * scale).roundToInt(),
+                oriented,
+                (oriented.width * scale).roundToInt(),
+                (oriented.height * scale).roundToInt(),
                 true
             )
         } else {
-            bitmap
+            oriented
         }
         val output = ByteArrayOutputStream()
         resized.compress(Bitmap.CompressFormat.JPEG, 86, output)
-        if (resized !== bitmap) resized.recycle()
-        bitmap.recycle()
+        if (resized !== oriented) resized.recycle()
+        oriented.recycle()
         val bytes = output.toByteArray()
         return Attachment(
             kind = AttachmentKind.IMAGE,
@@ -92,8 +97,35 @@ class AttachmentReader(private val context: Context) {
         )
     }
 
-    private fun readPdf(uri: Uri, metadata: FileMetadata): List<Attachment> {
-        val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+    private fun readExifOrientation(bytes: ByteArray): Int = runCatching {
+        ExifInterface(ByteArrayInputStream(bytes))
+            .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+    private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return bitmap
+        }
+        return runCatching {
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        }.getOrDefault(bitmap)
+    }
+
+    private fun readPdf(uri: Uri, metadata: FileMetadata): List<Attachment> {        val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
             ?: error("无法读取 PDF")
         return descriptor.use { file ->
             PdfRenderer(file).use { renderer ->

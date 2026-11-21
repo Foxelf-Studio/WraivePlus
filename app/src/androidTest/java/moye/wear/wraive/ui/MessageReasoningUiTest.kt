@@ -14,6 +14,9 @@ import androidx.compose.ui.test.performRotaryScrollInput
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.wear.compose.material3.AppScaffold
 import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
+import com.google.gson.Gson
+import moye.wear.wraive.data.DraftStore
 import moye.wear.wraive.model.ChatMessage
 import moye.wear.wraive.model.Conversation
 import moye.wear.wraive.model.MessageRole
@@ -29,6 +32,11 @@ import org.junit.Test
 
 class MessageReasoningUiTest {
     @get:Rule val compose = createComposeRule()
+
+    private val draftStore = DraftStore(
+        InstrumentationRegistry.getInstrumentation().targetContext,
+        Gson()
+    )
 
     private val reply = mutableStateOf(ChatMessage(
         id = "reply", conversationId = "chat", role = MessageRole.ASSISTANT,
@@ -47,7 +55,8 @@ class MessageReasoningUiTest {
                         showReasoning = showReasoning.value, markdownEnabled = false,
                         readAttachment = { emptyList() }, transcriptionConfig = TranscriptionConfig(),
                         startRecording = {}, stopAndTranscribe = { "" }, cancelRecording = {},
-                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {}
+                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {},
+                        draftStore = draftStore
                     )
                 }
             }

@@ -30,3 +30,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Local agent workspace data
+.workbuddy/

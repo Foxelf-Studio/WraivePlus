@@ -1,6 +1,9 @@
 package moye.wear.wraive.ui.components
 
 import android.content.Context
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.util.LruCache
 import android.util.TypedValue
 import android.widget.TextView
 import androidx.compose.foundation.background
@@ -59,10 +62,16 @@ private fun NativeMarkdownText(markdown: String, color: Color) {
     val textSize = MaterialTheme.typography.bodyMedium.fontSize
     val textSizePx = with(density) { textSize.toPx() }
     val textColor = color.toArgb()
-    val markwon = remember(context, textSizePx, textColor) {
-        createNativeMarkwon(context, textSizePx, textColor)
+    val needsLatex = remember(markdown) {
+        markdown.any { it == '$' } || markdown.contains("\\(") || markdown.contains("\\[")
+    }
+    val markwon = remember(textSizePx, textColor, needsLatex) {
+        cachedNativeMarkwon(context, textSizePx, textColor, needsLatex)
     }
     val normalized = remember(markdown) { normalizeLatexDelimiters(markdown.trim()) }
+    val cacheable = remember(markdown) {
+        !markdown.contains("![") && !markdown.contains("<img", ignoreCase = true)
+    }
     AndroidView(
         factory = { viewContext ->
             TextView(viewContext).apply {
@@ -77,7 +86,11 @@ private fun NativeMarkdownText(markdown: String, color: Color) {
         update = { textView ->
             textView.setTextColor(textColor)
             textView.setLinkTextColor(textColor)
-            setStreamingMarkdown(markwon, textView, normalized)
+            when {
+                needsLatex -> setStreamingMarkdown(markwon, textView, normalized)
+                cacheable -> setCachedMarkdown(markwon, textView, normalized)
+                else -> setStreamingMarkdown(markwon, textView, normalized)
+            }
         },
         onReset = null,
         onRelease = { AsyncDrawableScheduler.unschedule(it) },
@@ -101,6 +114,61 @@ internal fun createNativeMarkwon(
         builder.theme().textColor(textColor)
     }))
     .build()
+
+/**
+ * Building Markwon is expensive and the same configuration is shared by every message bubble.
+ * Keep a few instances so scrolling through images and long replies does not rebuild the parser
+ * for each item that enters the viewport.
+ */
+private val markwonCache = LruCache<String, Markwon>(4)
+
+private fun cachedNativeMarkwon(
+    context: Context,
+    textSizePx: Float,
+    textColor: Int,
+    latex: Boolean
+): Markwon {
+    val key = if (latex) "$textSizePx:$textColor" else "plain"
+    markwonCache.get(key)?.let { return it }
+    val markwon = if (latex) {
+        createNativeMarkwon(context.applicationContext, textSizePx, textColor)
+    } else {
+        createPlainMarkwon(context.applicationContext)
+    }
+    markwonCache.put(key, markwon)
+    return markwon
+}
+
+/** Markwon without the LaTeX plugin is markedly cheaper for the common case of plain replies. */
+private fun createPlainMarkwon(context: Context): Markwon = Markwon.builder(context)
+    .usePlugin(MarkwonInlineParserPlugin.create())
+    .usePlugin(TablePlugin.create(context))
+    .usePlugin(StrikethroughPlugin.create())
+    .usePlugin(TaskListPlugin.create(context))
+    .usePlugin(HtmlPlugin.create())
+    .usePlugin(SoftBreakAddsNewLinePlugin.create())
+    .build()
+
+private class ParsedMarkdown(val source: String, val text: Spanned)
+
+/** Parsed plain markdown survives list items leaving the viewport, so scrolling back is cheap. */
+private val parsedMarkdownCache = LruCache<String, ParsedMarkdown>(8)
+
+private fun setCachedMarkdown(markwon: Markwon, textView: TextView, markdown: String) {
+    val key = "${markdown.length}:${markdown.hashCode()}"
+    val cached = parsedMarkdownCache.get(key)
+    val rendered: Spanned = if (cached != null && cached.source == markdown) {
+        cached.text
+    } else {
+        val parsed = SpannableStringBuilder(markwon.toMarkdown(markdown))
+        parsedMarkdownCache.put(key, ParsedMarkdown(markdown, parsed))
+        parsed
+    }
+    if (textView.tag !== rendered) {
+        markwon.setParsedMarkdown(textView, rendered)
+        textView.tag = rendered
+    }
+}
 
 @Composable
 private fun CodeCard(source: String, language: String) {

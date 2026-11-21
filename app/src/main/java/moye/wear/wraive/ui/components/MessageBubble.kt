@@ -59,7 +59,6 @@ import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.Text
-import coil.compose.AsyncImage
 import moye.wear.wraive.model.AttachmentKind
 import moye.wear.wraive.model.Attachment
 import moye.wear.wraive.model.ChatMessage
@@ -199,10 +198,12 @@ internal fun MessageBubble(
                 }
             }
             if (part != MessagePart.HEADER && message.content.isNotBlank()) {
-                SelectionContainer {
-                    if (markdownEnabled) {
-                        MarkdownMessageText(message.content, contentColor)
-                    } else {
+                if (markdownEnabled) {
+                    // The native TextView is already selectable; wrapping it in SelectionContainer
+                    // adds a second selection layer and slows scrolling.
+                    MarkdownMessageText(message.content, contentColor)
+                } else {
+                    SelectionContainer {
                         Text(message.content, color = contentColor, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -224,9 +225,8 @@ internal fun MessageBubble(
             }
             message.attachments.takeIf { part != MessagePart.HEADER }.orEmpty().forEach { attachment ->
                 if (attachment.kind == AttachmentKind.IMAGE) {
-                    AsyncImage(
-                        model = attachment.uri,
-                        contentDescription = attachment.name,
+                    AttachmentImage(
+                        attachment = attachment,
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(1f)
@@ -292,9 +292,8 @@ internal fun MessageBubble(
                     .clickable { previewImage = null },
                 contentAlignment = androidx.compose.ui.Alignment.Center
             ) {
-                AsyncImage(
-                    model = attachment.uri,
-                    contentDescription = attachment.name,
+                AttachmentImage(
+                    attachment = attachment,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()

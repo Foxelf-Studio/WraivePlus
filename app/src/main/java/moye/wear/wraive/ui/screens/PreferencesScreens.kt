@@ -57,8 +57,8 @@ fun AppearanceScreen(
         item { WearSectionHeader("显示") }
         item {
             PreferenceSwitch(
-                "动态配色",
-                "跟随手表系统主题",
+                "动态表面配色",
+                "表面跟随系统主题，强调色固定为品牌色",
                 preferences.dynamicColor
             ) { checked -> onUpdate { it.copy(dynamicColor = checked) } }
         }

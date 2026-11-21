@@ -11,9 +11,10 @@ import moye.wear.wraive.data.AttachmentReader
 import moye.wear.wraive.data.BackupService
 import moye.wear.wraive.data.CloudBackupService
 import moye.wear.wraive.data.ConversationExporter
+import moye.wear.wraive.data.DraftStore
 import moye.wear.wraive.data.ForeignImportService
 import moye.wear.wraive.data.PreferencesStore
-import moye.wear.wraive.data.ProviderQrCodec
+import moye.wear.wraive.data.ProviderShareCodec
 import moye.wear.wraive.network.AiGateway
 import moye.wear.wraive.network.McpClient
 import moye.wear.wraive.network.NetworkProxyController
@@ -38,6 +39,7 @@ class AppGraph(application: Application) {
     val gson = GsonBuilder().serializeNulls().create()
     val repository = AppRepository(application, gson)
     val preferences = PreferencesStore(application, gson)
+    val draftStore = DraftStore(application, gson)
     val networkProxyController = NetworkProxyController()
     val httpClient = AiGateway.defaultHttpClient(networkProxyController)
     val gateway = AiGateway(httpClient, gson, application)
@@ -56,7 +58,7 @@ class AppGraph(application: Application) {
     val cloudBackupService = CloudBackupService(repository, backupService, httpClient)
     val conversationExporter = ConversationExporter(repository)
     val foreignImportService = ForeignImportService(repository, gson)
-    val providerQrCodec = ProviderQrCodec(gson)
+    val providerShareCodec = ProviderShareCodec(gson)
     val attachmentReader = AttachmentReader(application)
     val transcriptionController = TranscriptionController(application, httpClient, gson)
 

@@ -1,34 +1,32 @@
 package moye.wear.wraive.ui.screens
 
-import androidx.compose.foundation.Image
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.wear.compose.material3.Dialog
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.graphics.BitmapFactory
-import moye.wear.wraive.data.ProviderQrCodec
+import moye.wear.wraive.data.ProviderShareCodec
 import moye.wear.wraive.model.ModelConfig
 import moye.wear.wraive.model.ModelCapability
 import moye.wear.wraive.model.KeyRotationStrategy
@@ -46,14 +44,13 @@ import moye.wear.wraive.ui.components.WearInfoCard
 import moye.wear.wraive.ui.components.WearSectionHeader
 import moye.wear.wraive.ui.components.WearListScreen
 import moye.wear.wraive.ui.tr
-import moye.wear.wraive.ui.components.rememberWearFilePicker
 
 @Composable
 fun ProvidersScreen(
     providers: List<ProviderConfig>,
     models: List<ModelConfig>,
     gson: Gson,
-    qrCodec: ProviderQrCodec,
+    shareCodec: ProviderShareCodec,
     onCreate: (ProviderConfig) -> Unit,
     onOpen: (ProviderConfig) -> Unit
 ) {
@@ -91,7 +88,7 @@ fun ProvidersScreen(
     )
     ImportProviderDialog(
         visible = showImport,
-        qrCodec = qrCodec,
+        shareCodec = shareCodec,
         onDismiss = { showImport = false },
         onImport = {
             showImport = false
@@ -106,7 +103,7 @@ fun ProviderDetailsScreen(
     models: List<ModelConfig>,
     fetchingModels: Boolean,
     gson: Gson,
-    qrCodec: ProviderQrCodec,
+    shareCodec: ProviderShareCodec,
     onSave: (ProviderConfig) -> Unit,
     onDelete: () -> Unit,
     onFetchModels: () -> Unit,
@@ -146,7 +143,7 @@ fun ProviderDetailsScreen(
         }
         item(key = "management-title") { WearSectionHeader("管理") }
         item(key = "share") {
-            WearActionButton("二维码分享", { sharing = true }, icon = Icons.Default.QrCode)
+            WearActionButton("导出配置文本", { sharing = true }, icon = Icons.Default.Share)
         }
         item(key = "delete") {
             WearActionButton("删除供应商", { confirmingDelete = true },
@@ -163,7 +160,7 @@ fun ProviderDetailsScreen(
             editing = false
         }
     )
-    if (sharing) ProviderQrDialog(provider, qrCodec) { sharing = false }
+    if (sharing) ProviderShareDialog(provider, shareCodec) { sharing = false }
     ConfirmActionDialog(
         visible = confirmingDelete,
         title = "删除供应商？",
@@ -316,18 +313,60 @@ private fun ProviderEditorDialog(
 
 
 @Composable
-private fun ProviderQrDialog(
+private fun ProviderShareDialog(
     provider: ProviderConfig,
-    codec: ProviderQrCodec,
+    codec: ProviderShareCodec,
     onDismiss: () -> Unit
 ) {
-    val bitmap = remember(provider) { codec.bitmap(codec.encode(provider)) }
+    val context = LocalContext.current
+    val shareText = remember(provider) { codec.encode(provider) }
+    var copied by remember { mutableStateOf(false) }
     Dialog(visible = true, onDismissRequest = onDismiss) {
         WearListScreen(provider.name, edgeButton = {
             EdgeButton(onClick = onDismiss) { Text(tr("完成")) }
         }) {
-            item { Image(bitmap.asImageBitmap(), contentDescription = tr("供应商配置二维码"),
-                modifier = Modifier.fillMaxWidth().padding(8.dp)) }
+            item {
+                WearInfoCard("配置分享文本", "内容已加密，复制后发给对方，在导入页粘贴即可。加密可防止 API Key 以明文出现。")
+            }
+            item {
+                Text(
+                    text = shareText.take(120) + if (shareText.length > 120) "…" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            item {
+                WearActionButton(
+                    label = if (copied) "已复制" else "复制文本",
+                    secondary = "放入剪贴板",
+                    icon = Icons.Default.ContentCopy,
+                    primary = true,
+                    onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("Wraive+ 配置", shareText))
+                        copied = true
+                    }
+                )
+            }
+            item {
+                WearActionButton(
+                    label = "系统分享",
+                    icon = Icons.Default.Share,
+                    onClick = {
+                        runCatching {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(send, "分享配置")
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -335,7 +374,7 @@ private fun ProviderQrDialog(
 @Composable
 private fun ImportProviderDialog(
     visible: Boolean,
-    qrCodec: ProviderQrCodec,
+    shareCodec: ProviderShareCodec,
     onDismiss: () -> Unit,
     onImport: (ProviderConfig) -> Unit
 ) {
@@ -343,32 +382,37 @@ private fun ImportProviderDialog(
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    val camera = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null) runCatching { qrCodec.decode(bitmap) }
-            .onSuccess(onImport)
-            .onFailure { error = it.message }
-    }
-    val image = rememberWearFilePicker { uri ->
-        runCatching {
-            val bitmap = context.contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it)
-            } ?: error("无法读取二维码图片")
-            qrCodec.decode(bitmap)
-        }.onSuccess(onImport).onFailure { error = it.message }
-    }
     Dialog(visible = visible, onDismissRequest = onDismiss) {
         WearListScreen("导入分享配置", edgeButton = {
             EdgeButton(onClick = {
-                runCatching { qrCodec.decode(text.trim()) }
+                runCatching { shareCodec.decode(text) }
                     .onSuccess(onImport)
-                    .onFailure { error = it.message }
+                    .onFailure { error = it.message ?: "导入失败" }
             }, enabled = text.isNotBlank()) { Text(tr("导入")) }
         }) {
-            item { WearTextField(text, { text = it }, "粘贴 Wraive 分享文本", 6) }
-            item { WearActionButton("相机扫码", { camera.launch(null) }, icon = Icons.Default.QrCode) }
-            item { WearActionButton("从图片读取", { image.launch(arrayOf("image/*")) }, icon = Icons.Default.Download) }
+            item { WearTextField(text, { text = it }, "粘贴 Wraive+ 分享文本", 6) }
+            item {
+                WearActionButton(
+                    label = "从剪贴板粘贴",
+                    secondary = "读取已复制的分享文本",
+                    icon = Icons.Default.ContentPaste,
+                    onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        val clip = clipboard?.primaryClip
+                        val pasted = if (clip != null && clip.itemCount > 0) {
+                            clip.getItemAt(0)?.coerceToText(context)?.toString()
+                        } else {
+                            null
+                        }
+                        if (pasted.isNullOrBlank()) {
+                            error = "剪贴板里没有文本"
+                        } else {
+                            text = pasted.trim()
+                            error = null
+                        }
+                    }
+                )
+            }
             error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         }
     }

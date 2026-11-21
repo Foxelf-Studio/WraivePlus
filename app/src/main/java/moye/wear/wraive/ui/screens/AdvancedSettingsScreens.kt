@@ -40,6 +40,7 @@ import moye.wear.wraive.model.TranscriptionEngine
 import moye.wear.wraive.model.UsageSummary
 import moye.wear.wraive.ui.components.FullScreenEditor
 import moye.wear.wraive.ui.components.WearActionButton
+import moye.wear.wraive.ui.components.WearInfoCard
 import moye.wear.wraive.ui.components.WearListScreen
 import moye.wear.wraive.ui.components.WearSelectionField
 import moye.wear.wraive.ui.components.WearSelectionButton
@@ -466,11 +467,12 @@ fun TranscriptionSettingsScreen(
                     TranscriptionEngine.SYSTEM -> "系统语音识别"
                     TranscriptionEngine.OPENAI -> "OpenAI 兼容转写"
                     TranscriptionEngine.GOOGLE -> "Google Speech-to-Text"
+                    TranscriptionEngine.DEEPSEEK -> "DeepSeek ASR"
                 },
-                secondary = if (config.engine == TranscriptionEngine.SYSTEM) {
-                    "使用手表自带识别界面"
-                } else {
-                    config.model
+                secondary = when (config.engine) {
+                    TranscriptionEngine.SYSTEM -> "使用手表自带识别界面"
+                    TranscriptionEngine.DEEPSEEK -> "录音上传，语种自动识别"
+                    else -> config.model
                 },
                 icon = Icons.Default.Mic,
                 primary = true,
@@ -523,13 +525,23 @@ private fun TranscriptionEditor(
                         TranscriptionEngine.SYSTEM -> "系统识别"
                         TranscriptionEngine.OPENAI -> "OpenAI 兼容"
                         TranscriptionEngine.GOOGLE -> "Google Cloud"
+                        TranscriptionEngine.DEEPSEEK -> "DeepSeek ASR"
                     } })
         }
         if (engine != TranscriptionEngine.SYSTEM) {
             item { WearTextField(endpoint, { endpoint = it }, "API URL（留空用默认）") }
             item { WearTextField(apiKey, { apiKey = it }, "API Key", password = true) }
-            item { WearTextField(model, { model = it }, "模型") }
-            item { WearTextField(language, { language = it }, "语言代码") }
+            if (engine == TranscriptionEngine.DEEPSEEK) {
+                item {
+                    WearInfoCard(
+                        "DeepSeek ASR",
+                        "端点固定为 /v1/tools/asr，没有模型名与语种参数；语种自动识别，录音格式为 16kHz WAV，单次最长 120 秒。"
+                    )
+                }
+            } else {
+                item { WearTextField(model, { model = it }, "模型") }
+                item { WearTextField(language, { language = it }, "语言代码") }
+            }
         }
     }
 }

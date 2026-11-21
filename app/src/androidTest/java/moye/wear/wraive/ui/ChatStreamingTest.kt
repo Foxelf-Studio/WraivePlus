@@ -15,6 +15,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.swipeDown
 import androidx.wear.compose.material3.AppScaffold
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.test.platform.app.InstrumentationRegistry
+import com.google.gson.Gson
+import moye.wear.wraive.data.DraftStore
 import moye.wear.wraive.model.ChatMessage
 import moye.wear.wraive.model.Conversation
 import moye.wear.wraive.model.MessageRole
@@ -30,6 +33,11 @@ import org.junit.Test
 class ChatStreamingTest {
     @get:Rule val compose = createComposeRule()
 
+    private val draftStore = DraftStore(
+        InstrumentationRegistry.getInstrumentation().targetContext,
+        Gson()
+    )
+
     @Test
     fun rotaryScrollSurvivesStreamedRecompositions() {
         val conversation = Conversation(id = "rotary-chat", assistantId = "assistant")
@@ -43,7 +51,7 @@ class ChatStreamingTest {
                     ChatScreen(conversation, listOf(reply.value), emptyList(), true, true, false,
                         readAttachment = { emptyList() }, transcriptionConfig = TranscriptionConfig(),
                         startRecording = {}, stopAndTranscribe = { "" }, cancelRecording = {},
-                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {})
+                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {}, draftStore = draftStore)
                 }
             }
         }
@@ -82,7 +90,7 @@ class ChatStreamingTest {
                     ChatScreen(conversation, listOf(reply), emptyList(), false, true, false,
                         readAttachment = { emptyList() }, transcriptionConfig = TranscriptionConfig(),
                         startRecording = {}, stopAndTranscribe = { "" }, cancelRecording = {},
-                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {})
+                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {}, draftStore = draftStore)
                 }
             }
         }
@@ -138,7 +146,7 @@ class ChatStreamingTest {
                     ChatScreen(conversation, listOf(message), emptyList(), false, true, markdownEnabled,
                         readAttachment = { emptyList() }, transcriptionConfig = TranscriptionConfig(),
                         startRecording = {}, stopAndTranscribe = { "" }, cancelRecording = {},
-                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {})
+                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {}, draftStore = draftStore)
                 }
             }
         }
@@ -161,7 +169,7 @@ class ChatStreamingTest {
                     ChatScreen(conversation, listOf(reply.value), emptyList(), true, true, true,
                         readAttachment = { emptyList() }, transcriptionConfig = TranscriptionConfig(),
                         startRecording = {}, stopAndTranscribe = { "" }, cancelRecording = {},
-                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {})
+                        onSend = { _, _ -> }, onStop = {}, onMessageActions = {}, draftStore = draftStore)
                 }
             }
         }

@@ -4,7 +4,7 @@ import java.util.UUID
 
 enum class SpeechEngine { SYSTEM, OPENAI, ELEVENLABS, GOOGLE }
 
-enum class TranscriptionEngine { SYSTEM, OPENAI, GOOGLE }
+enum class TranscriptionEngine { SYSTEM, OPENAI, GOOGLE, DEEPSEEK }
 
 data class SpeechConfig(
     val id: String = DEFAULT_ID,

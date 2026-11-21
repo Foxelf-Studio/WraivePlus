@@ -12,8 +12,8 @@ android {
         applicationId = "moye.wear.wraive"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.2.1"
+        versionCode = 6
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

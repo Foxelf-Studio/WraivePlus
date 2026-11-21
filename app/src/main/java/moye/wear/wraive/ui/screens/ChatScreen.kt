@@ -3,6 +3,7 @@ package moye.wear.wraive.ui.screens
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,15 +26,19 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,10 +58,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.wear.compose.material3.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -78,7 +87,10 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import moye.wear.wraive.data.ChatDraft
+import moye.wear.wraive.data.DraftStore
 import moye.wear.wraive.model.Attachment
 import moye.wear.wraive.model.ChatMessage
 import moye.wear.wraive.model.Conversation
@@ -91,8 +103,35 @@ import moye.wear.wraive.ui.components.chatMessageItems
 import moye.wear.wraive.ui.components.rememberChatRotaryScrollableBehavior
 import moye.wear.wraive.ui.components.WearActionButton
 import moye.wear.wraive.ui.components.WearFisheyeScope
+import moye.wear.wraive.ui.components.WearImagePickerOverlay
+import moye.wear.wraive.ui.components.deleteCapturedPhoto
+import moye.wear.wraive.ui.components.rememberWearCameraCapture
+import moye.wear.wraive.ui.components.rememberWearImagePicker
 import moye.wear.wraive.ui.components.rememberWearMultiFilePicker
 import moye.wear.wraive.ui.tr
+
+/**
+ * Composer content kept above the input dialog so closing the dialog does not drop the draft.
+ * Only the text is persisted eagerly; attachments are re-read from their source URIs.
+ */
+@Stable
+private class ComposerDraftState(
+    text: String = "",
+    attachments: List<Attachment> = emptyList(),
+    sources: List<String> = emptyList()
+) {
+    var text by mutableStateOf(text)
+    var attachments by mutableStateOf(attachments)
+    var sources by mutableStateOf(sources)
+
+    fun clear() {
+        text = ""
+        attachments = emptyList()
+        sources = emptyList()
+    }
+
+    fun toChatDraft() = ChatDraft(text, sources)
+}
 
 @Composable
 fun ChatScreen(
@@ -104,12 +143,13 @@ fun ChatScreen(
     markdownEnabled: Boolean,
     readAttachment: suspend (Uri) -> List<Attachment>,
     transcriptionConfig: TranscriptionConfig,
-    startRecording: () -> Unit,
+    startRecording: (TranscriptionConfig) -> Unit,
     stopAndTranscribe: suspend (TranscriptionConfig) -> String,
     cancelRecording: () -> Unit,
     onSend: (String, List<Attachment>) -> Unit,
     onStop: () -> Unit,
     onMessageActions: (ChatMessage) -> Unit,
+    draftStore: DraftStore,
     assistantName: String = ""
 ) {
     val state = rememberLazyListState()
@@ -117,6 +157,7 @@ fun ChatScreen(
     val focusRequester = remember { FocusRequester() }
     val rotaryBehavior = rememberChatRotaryScrollableBehavior(state)
     val configuration = LocalConfiguration.current
+    val context = LocalContext.current
     val floatingButtonBottom = (configuration.screenHeightDp.dp * 0.25f).coerceIn(36.dp, 52.dp)
     var followLatest by remember(conversation.id) { mutableStateOf(true) }
     var lastMessageLayoutRevision by remember(conversation.id) { mutableIntStateOf(0) }
@@ -126,6 +167,47 @@ fun ChatScreen(
     }
     val bottomIndex = if (messages.isEmpty()) 2 else chatItems.size + 1
     var showInput by remember { mutableStateOf(false) }
+    val draft = remember(conversation.id) {
+        val stored = if (conversation.temporary) ChatDraft() else draftStore.load(conversation.id)
+        ComposerDraftState(stored.text, sources = stored.attachmentUris)
+    }
+    var restoringDraft by remember(conversation.id) { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    fun persistDraft() {
+        if (!conversation.temporary) draftStore.save(conversation.id, draft.toChatDraft())
+    }
+    DisposableEffect(conversation.id, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) persistDraft()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            persistDraft()
+        }
+    }
+    // Debounced autosave so leaving the app mid-sentence keeps the draft.
+    LaunchedEffect(conversation.id) {
+        snapshotFlow { draft.text to draft.sources }
+            .collectLatest { (text, sources) ->
+                delay(350)
+                if (!conversation.temporary) {
+                    draftStore.save(conversation.id, ChatDraft(text, sources))
+                }
+            }
+    }
+    // Attachments are kept as source URIs in the draft and re-read on demand.
+    LaunchedEffect(showInput, conversation.id) {
+        if (!showInput || restoringDraft || draft.attachments.isNotEmpty()) return@LaunchedEffect
+        val uris = draft.sources
+        if (uris.isEmpty()) return@LaunchedEffect
+        restoringDraft = true
+        val restored = uris.flatMap { uri ->
+            runCatching { readAttachment(Uri.parse(uri)) }.getOrDefault(emptyList())
+        }
+        if (draft.attachments.isEmpty()) draft.attachments = restored
+        restoringDraft = false
+    }
     val scrollConnection = remember(state) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -267,6 +349,8 @@ fun ChatScreen(
     }
     ChatInputDialog(
         visible = showInput,
+        draft = draft,
+        restoringDraft = restoringDraft,
         quickPhrases = quickPhrases.filter {
             it.assistantId == null || it.assistantId == conversation.assistantId
         },
@@ -278,11 +362,15 @@ fun ChatScreen(
         onDismiss = {
             cancelRecording()
             showInput = false
+            persistDraft()
         },
         onSend = { text, attachments ->
             cancelRecording()
             followLatest = true
             showInput = false
+            draft.sources.forEach { deleteCapturedPhoto(context, it) }
+            draft.clear()
+            if (!conversation.temporary) draftStore.clear(conversation.id)
             onSend(text, attachments)
         }
     )
@@ -291,23 +379,25 @@ fun ChatScreen(
 @Composable
 private fun ChatInputDialog(
     visible: Boolean,
+    draft: ComposerDraftState,
+    restoringDraft: Boolean,
     quickPhrases: List<QuickPhrase>,
     readAttachment: suspend (Uri) -> List<Attachment>,
     transcriptionConfig: TranscriptionConfig,
-    startRecording: () -> Unit,
+    startRecording: (TranscriptionConfig) -> Unit,
     stopAndTranscribe: suspend (TranscriptionConfig) -> String,
     cancelRecording: () -> Unit,
     onDismiss: () -> Unit,
     onSend: (String, List<Attachment>) -> Unit
 ) {
     if (!visible) return
-    var text by remember(visible) { mutableStateOf("") }
-    var attachments by remember(visible) { mutableStateOf<List<Attachment>>(emptyList()) }
     var attachmentError by remember(visible) { mutableStateOf<String?>(null) }
     var recording by remember(visible) { mutableStateOf(false) }
     var transcribing by remember(visible) { mutableStateOf(false) }
     var readingAttachments by remember(visible) { mutableStateOf(false) }
+    var inputFocusedOnce by remember(visible) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -321,14 +411,14 @@ private fun ChatInputDialog(
             val recognized = result.data
                 ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
                 ?.firstOrNull()
-            if (!recognized.isNullOrBlank()) text = recognized
+            if (!recognized.isNullOrBlank()) draft.text = recognized
         }
     }
     val recordPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            runCatching { startRecording() }
+            runCatching { startRecording(transcriptionConfig) }
                 .onSuccess { recording = true }
                 .onFailure { attachmentError = it.message }
         } else {
@@ -340,99 +430,136 @@ private fun ChatInputDialog(
             attachmentError = null
             readingAttachments = true
             runCatching { uris.flatMap { readAttachment(it) } }
-                .onSuccess { attachments = attachments + it }
+                .onSuccess {
+                    draft.attachments = draft.attachments + it
+                    draft.sources = draft.sources + uris.map(Uri::toString)
+                }
                 .onFailure { attachmentError = it.message }
             readingAttachments = false
         }
     }
-    val inputBusy = recording || transcribing || readingAttachments
-    val canSend = !inputBusy && (text.isNotBlank() || attachments.isNotEmpty())
+    val addImage: (Uri) -> Unit = { uri ->
+        scope.launch {
+            attachmentError = null
+            readingAttachments = true
+            runCatching { readAttachment(uri) }
+                .onSuccess {
+                    draft.attachments = draft.attachments + it
+                    draft.sources = draft.sources + uri.toString()
+                }
+                .onFailure {
+                    attachmentError = it.message
+                    deleteCapturedPhoto(context, uri.toString())
+                }
+            readingAttachments = false
+        }
+    }
+    val camera = rememberWearCameraCapture(
+        onPhotoCaptured = addImage,
+        onError = { attachmentError = it }
+    )
+    val imagePicker = rememberWearImagePicker(onImageSelected = addImage)
+    val hasCamera = remember(context) {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+    }
+    val inputBusy = recording || transcribing || readingAttachments || restoringDraft
+    val canSend = !inputBusy && (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val submit = {
         if (canSend) {
-            onSend(text.trim(), attachments)
+            onSend(draft.text.trim(), draft.attachments)
         }
     }
     Dialog(
         visible = visible,
         onDismissRequest = {
-            if (recording) cancelRecording()
-            onDismiss()
+            if (imagePicker.isActive) {
+                imagePicker.dismiss()
+            } else {
+                if (recording) cancelRecording()
+                onDismiss()
+            }
         },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        LaunchedEffect(Unit) {
-            delay(200)
-            focusRequester.requestFocus()
+        LaunchedEffect(imagePicker.isActive) {
+            if (!imagePicker.isActive && !inputFocusedOnce) {
+                delay(200)
+                focusRequester.requestFocus()
+                inputFocusedOnce = true
+            }
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            ScreenScaffold(
-                scrollState = listState,
-                edgeButton = {
-                    val size = EdgeButtonSize.ExtraSmall
-                    EdgeButton(
-                        onClick = submit,
-                        enabled = canSend,
-                        modifier = Modifier.fillMaxWidth(),
-                        buttonSize = size
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = tr("发送"),
-                            modifier = Modifier.size(EdgeButtonDefaults.iconSizeFor(size))
-                        )
-                    }
-                }
-            ) { contentPadding ->
-                TransformingLazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = contentPadding,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
-                    rotaryScrollableBehavior = rememberChatRotaryScrollableBehavior(listState)
-                ) {
-                    with(WearFisheyeScope(this, transformationSpec, isRound)) {
-                        item {
-                            ListHeader(Modifier.fillMaxWidth()) { Text(tr("输入消息")) }
-                        }
-                        item {
-                            OutlinedTextField(
-                                value = text,
-                                onValueChange = { text = it },
-                                placeholder = { Text(tr("输入内容")) },
-                                minLines = 3,
-                                maxLines = 8,
-                                shape = RoundedCornerShape(24.dp),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                keyboardActions = KeyboardActions(onSend = { submit() }),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                ),
-                                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+            if (imagePicker.isActive) {
+                WearImagePickerOverlay(state = imagePicker, onImageSelected = addImage)
+            } else {
+                ScreenScaffold(
+                    scrollState = listState,
+                    edgeButton = {
+                        val size = EdgeButtonSize.ExtraSmall
+                        EdgeButton(
+                            onClick = submit,
+                            enabled = canSend,
+                            modifier = Modifier.fillMaxWidth(),
+                            buttonSize = size
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = tr("发送"),
+                                modifier = Modifier.size(EdgeButtonDefaults.iconSizeFor(size))
                             )
                         }
-                        item {
-                            WearActionButton(
-                                label = when {
-                                    transcribing -> "正在转写…"
-                                    recording -> "停止并转写"
-                                    else -> "语音输入"
-                                },
-                                secondary = when (transcriptionConfig.engine) {
-                                    TranscriptionEngine.SYSTEM -> "系统识别"
-                                    TranscriptionEngine.OPENAI -> "OpenAI 兼容"
-                                    TranscriptionEngine.GOOGLE -> "Google Cloud"
-                                },
-                                icon = Icons.Default.Mic,
-                                onClick = {
-                                    if (transcriptionConfig.engine == TranscriptionEngine.SYSTEM) {
-                                        voiceLauncher.launch(
-                                            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    }
+                ) { contentPadding ->
+                    TransformingLazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = contentPadding,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                        rotaryScrollableBehavior = rememberChatRotaryScrollableBehavior(listState)
+                    ) {
+                        with(WearFisheyeScope(this, transformationSpec, isRound)) {
+                            item {
+                                ListHeader(Modifier.fillMaxWidth()) { Text(tr("输入消息")) }
+                            }
+                            item {
+                                OutlinedTextField(
+                                    value = draft.text,
+                                    onValueChange = { draft.text = it },
+                                    placeholder = { Text(tr("输入内容")) },
+                                    minLines = 3,
+                                    maxLines = 8,
+                                    shape = RoundedCornerShape(24.dp),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                    keyboardActions = KeyboardActions(onSend = { submit() }),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    ),
+                                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                                )
+                            }
+                            item {
+                                WearActionButton(
+                                    label = when {
+                                        transcribing -> "正在转写…"
+                                        recording -> "停止并转写"
+                                        else -> "语音输入"
+                                    },
+                                    secondary = when (transcriptionConfig.engine) {
+                                        TranscriptionEngine.SYSTEM -> "系统识别"
+                                        TranscriptionEngine.OPENAI -> "OpenAI 兼容"
+                                        TranscriptionEngine.GOOGLE -> "Google Cloud"
+                                        TranscriptionEngine.DEEPSEEK -> "DeepSeek ASR"
+                                    },
+                                    icon = Icons.Default.Mic,
+                                    onClick = {
+                                        if (transcriptionConfig.engine == TranscriptionEngine.SYSTEM) {
+                                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                                 putExtra(
                                                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                                                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
@@ -443,59 +570,101 @@ private fun ChatInputDialog(
                                                 )
                                                 putExtra(RecognizerIntent.EXTRA_PROMPT, voicePrompt)
                                             }
-                                        )
-                                    } else if (recording) {
-                                        recording = false
-                                        transcribing = true
-                                        scope.launch {
-                                            runCatching { stopAndTranscribe(transcriptionConfig) }
-                                                .onSuccess { recognized ->
-                                                    text = listOf(text, recognized)
-                                                        .filter(String::isNotBlank)
-                                                        .joinToString(" ")
+                                            runCatching { voiceLauncher.launch(intent) }
+                                                .onFailure {
+                                                    attachmentError =
+                                                        "无法启动系统语音识别，请在设置中改用其他转写引擎"
                                                 }
-                                                .onFailure { attachmentError = it.message }
-                                            transcribing = false
+                                        } else if (recording) {
+                                            recording = false
+                                            transcribing = true
+                                            scope.launch {
+                                                runCatching { stopAndTranscribe(transcriptionConfig) }
+                                                    .onSuccess { recognized ->
+                                                        draft.text = listOf(draft.text, recognized)
+                                                            .filter(String::isNotBlank)
+                                                            .joinToString(" ")
+                                                    }
+                                                    .onFailure { attachmentError = it.message }
+                                                transcribing = false
+                                            }
+                                        } else {
+                                            recordPermission.launch(Manifest.permission.RECORD_AUDIO)
                                         }
-                                    } else {
-                                        recordPermission.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
-                                },
-                                enabled = !transcribing && !readingAttachments
-                            )
-                        }
-                        item {
-                            WearActionButton(
-                                label = if (readingAttachments) "正在读取附件…" else "添加附件",
-                                secondary = if (attachments.isEmpty()) null else {
-                                    attachments.joinToString { it.name }
-                                },
-                                icon = Icons.Default.AttachFile,
-                                onClick = { attachmentLauncher.launch(arrayOf("*/*")) },
-                                enabled = !inputBusy
-                            )
-                        }
-                        attachmentError?.let { error ->
-                            item { Text(error, color = MaterialTheme.colorScheme.error) }
-                        }
-                        if (quickPhrases.isNotEmpty()) {
-                            item {
-                                Text(
-                                    tr("快捷短语"),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    enabled = !transcribing && !readingAttachments
                                 )
                             }
-                            quickPhrases.forEach { phrase ->
-                                item(key = phrase.id) {
+                            if (hasCamera) {
+                                item {
                                     WearActionButton(
-                                        label = phrase.title,
-                                        secondary = phrase.content,
-                                        onClick = { text = phrase.content }
+                                        label = "拍照",
+                                        secondary = "调用系统相机",
+                                        icon = Icons.Default.PhotoCamera,
+                                        onClick = { camera.launch() },
+                                        enabled = !inputBusy
                                     )
                                 }
                             }
+                            item {
+                                WearActionButton(
+                                    label = if (restoringDraft) "正在恢复草稿…" else "上传图片",
+                                    secondary = "从相册选择",
+                                    icon = Icons.Default.AddPhotoAlternate,
+                                    onClick = { imagePicker.launch() },
+                                    enabled = !inputBusy
+                                )
+                            }
+                            item {
+                                WearActionButton(
+                                    label = if (readingAttachments) "正在读取附件…" else "添加附件",
+                                    secondary = if (draft.attachments.isEmpty()) null else {
+                                        draft.attachments.joinToString { it.name }
+                                    },
+                                    icon = Icons.Default.AttachFile,
+                                    onClick = { attachmentLauncher.launch(arrayOf("*/*")) },
+                                    enabled = !inputBusy
+                                )
+                            }
+                            if (draft.attachments.isNotEmpty()) {
+                                item {
+                                    WearActionButton(
+                                        label = "清空附件",
+                                        secondary = "已选 ${draft.attachments.size} 个",
+                                        onClick = {
+                                            draft.sources.forEach {
+                                                deleteCapturedPhoto(context, it)
+                                            }
+                                            draft.attachments = emptyList()
+                                            draft.sources = emptyList()
+                                        },
+                                        enabled = !inputBusy,
+                                        danger = true
+                                    )
+                                }
+                            }
+                            attachmentError?.let { error ->
+                                item { Text(error, color = MaterialTheme.colorScheme.error) }
+                            }
+                            if (quickPhrases.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        tr("快捷短语"),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                quickPhrases.forEach { phrase ->
+                                    item(key = phrase.id) {
+                                        WearActionButton(
+                                            label = phrase.title,
+                                            secondary = phrase.content,
+                                            onClick = { draft.text = phrase.content }
+                                        )
+                                    }
+                                }
+                            }
+                            item { Spacer(Modifier.height(36.dp)) }
                         }
-                        item { Spacer(Modifier.height(36.dp)) }
                     }
                 }
             }
