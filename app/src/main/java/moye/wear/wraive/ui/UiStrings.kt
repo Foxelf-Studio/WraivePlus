@@ -18,6 +18,8 @@ fun tr(text: String): String {
 private val englishStrings = mapOf(
     "开源项目" to "Open source",
     "开源地址" to "Source code",
+    "原仓库地址" to "Upstream repository",
+    "本仓库地址" to "This repository",
     "开源仓库二维码" to "Source repository QR code",
     "使用手机扫码访问" to "Scan with your phone to open",
     "供应商配置" to "Provider configuration",
@@ -116,6 +118,11 @@ private val englishStrings = mapOf(
     "表格可左右滑动" to "Table scrolls horizontally",
     "无法启动系统语音识别，请在设置中改用其他转写引擎" to
         "System speech recognition is unavailable. Choose another transcription engine in settings.",
+    "设备没有可用的系统语音识别服务，请在设置中改用其他转写引擎" to
+        "No system speech recognition service is installed. Choose another transcription engine in settings.",
+    "没有识别到语音内容，请再说一次" to "No speech was recognized. Please try again.",
+    "转写失败，请重试" to "Transcription failed. Please try again.",
+    "知道了" to "Got it",
     "正在恢复草稿…" to "Restoring draft…",
     "清空附件" to "Clear attachments",
     "选择图片" to "Choose image",

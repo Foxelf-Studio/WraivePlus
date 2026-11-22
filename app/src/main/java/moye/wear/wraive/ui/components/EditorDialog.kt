@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.OutlinedTextField
@@ -23,6 +24,28 @@ import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import moye.wear.wraive.ui.tr
+
+/** Single-button dialog for messages the user only needs to acknowledge. */
+@Composable
+fun WearNoticeDialog(
+    visible: Boolean,
+    title: String,
+    message: String,
+    onDismiss: () -> Unit
+) {
+    if (!visible) return
+    AlertDialog(
+        visible = true,
+        onDismissRequest = onDismiss,
+        title = { Text(tr(title)) },
+        text = { Text(tr(message), color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        confirmButton = {
+            AlertDialogDefaults.ConfirmButton(onClick = onDismiss) {
+                Icon(Icons.Default.Check, contentDescription = tr("知道了"))
+            }
+        }
+    )
+}
 
 @Composable
 fun ConfirmActionDialog(

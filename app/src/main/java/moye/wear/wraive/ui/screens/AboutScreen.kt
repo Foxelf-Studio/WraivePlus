@@ -3,8 +3,6 @@ package moye.wear.wraive.ui.screens
 import android.os.Build
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -54,22 +52,27 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 
 private const val SOURCE_URL = "https://github.com/Foxelf-Studio/WraivePlus"
+private const val UPSTREAM_URL = "https://github.com/youshen2/Wraive"
 
 @Composable
 fun AboutScreen() {
-    var showingSource by remember { mutableStateOf(false) }
+    var sourceDialogUrl by remember { mutableStateOf<String?>(null) }
     WearListScreen("关于软件") {
         item(key = "app-identity") { AppIdentity() }
         item(key = "developer-section") { AboutSectionLabel("开发者") }
         item(key = "developer-foxelf") {
-            DeveloperPanel(R.drawable.foxelf_studio, "Foxelf Studio", "二次开发", SOURCE_URL)
+            DeveloperPanel(R.drawable.foxelf_studio, "Foxelf Studio", "二次开发")
         }
         item(key = "developer-moye") {
             DeveloperPanel(R.drawable.developer_moye, "爅峫", "设计与开发（上游）")
         }
         item(key = "source-section") { AboutSectionLabel("开源项目") }
-        item(key = "source") {
-            WearActionButton("开源地址", { showingSource = true },
+        item(key = "source-upstream") {
+            WearActionButton("原仓库地址", { sourceDialogUrl = UPSTREAM_URL },
+                icon = Icons.Default.Code, secondary = UPSTREAM_URL.removePrefix("https://"))
+        }
+        item(key = "source-fork") {
+            WearActionButton("本仓库地址", { sourceDialogUrl = SOURCE_URL },
                 icon = Icons.Default.Code, secondary = SOURCE_URL.removePrefix("https://"))
         }
         item(key = "credits-section") { AboutSectionLabel("参考与致谢") }
@@ -104,14 +107,16 @@ fun AboutScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
         }
     }
-    if (showingSource) SourceAddressDialog { showingSource = false }
+    sourceDialogUrl?.let { url ->
+        SourceAddressDialog(url) { sourceDialogUrl = null }
+    }
 }
 
 @Composable
-private fun SourceAddressDialog(onDismiss: () -> Unit) {
-    val qrCode = remember {
+private fun SourceAddressDialog(url: String, onDismiss: () -> Unit) {
+    val qrCode = remember(url) {
         val size = 384
-        val matrix = QRCodeWriter().encode(SOURCE_URL, BarcodeFormat.QR_CODE, size, size)
+        val matrix = QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, size, size)
         val pixels = IntArray(size * size) { index ->
             if (matrix[index % size, index / size]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
         }
@@ -126,7 +131,7 @@ private fun SourceAddressDialog(onDismiss: () -> Unit) {
                 }
             }
             item(key = "source-url") {
-                Text(SOURCE_URL, modifier = Modifier.fillMaxWidth(),
+                Text(url, modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurface)
             }
@@ -191,20 +196,11 @@ private fun AboutPanel(title: String, icon: ImageVector, content: @Composable Co
 private fun DeveloperPanel(
     avatarRes: Int,
     name: String,
-    role: String,
-    url: String? = null
+    role: String
 ) {
-    val uriHandler = LocalUriHandler.current
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .then(
-                if (url == null) {
-                    Modifier
-                } else {
-                    Modifier.clickable { runCatching { uriHandler.openUri(url) } }
-                }
-            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -218,11 +214,6 @@ private fun DeveloperPanel(
             Text(tr(role), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
-            if (url != null) {
-                Text(url.removePrefix("https://"), style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-            }
         }
     }
 }

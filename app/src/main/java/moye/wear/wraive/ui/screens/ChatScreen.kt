@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,6 +104,7 @@ import moye.wear.wraive.ui.components.chatMessageItems
 import moye.wear.wraive.ui.components.rememberChatRotaryScrollableBehavior
 import moye.wear.wraive.ui.components.WearActionButton
 import moye.wear.wraive.ui.components.WearFisheyeScope
+import moye.wear.wraive.ui.components.WearNoticeDialog
 import moye.wear.wraive.ui.components.WearImagePickerOverlay
 import moye.wear.wraive.ui.components.deleteCapturedPhoto
 import moye.wear.wraive.ui.components.rememberWearCameraCapture
@@ -392,6 +394,9 @@ private fun ChatInputDialog(
 ) {
     if (!visible) return
     var attachmentError by remember(visible) { mutableStateOf<String?>(null) }
+    // Voice problems are surfaced in a dialog: the inline label lives below the
+    // fold of the input sheet, so users never noticed it.
+    var voiceError by remember(visible) { mutableStateOf<String?>(null) }
     var recording by remember(visible) { mutableStateOf(false) }
     var transcribing by remember(visible) { mutableStateOf(false) }
     var readingAttachments by remember(visible) { mutableStateOf(false) }
@@ -411,8 +416,14 @@ private fun ChatInputDialog(
             val recognized = result.data
                 ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
                 ?.firstOrNull()
-            if (!recognized.isNullOrBlank()) draft.text = recognized
+            if (!recognized.isNullOrBlank()) {
+                draft.text = recognized
+            } else {
+                voiceError = "没有识别到语音内容，请再说一次"
+            }
         }
+        // CANCELED covers both a deliberate cancel and an internal recognizer
+        // failure, and the intent carries no error code, so it is left silent.
     }
     val recordPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -420,9 +431,9 @@ private fun ChatInputDialog(
         if (granted) {
             runCatching { startRecording(transcriptionConfig) }
                 .onSuccess { recording = true }
-                .onFailure { attachmentError = it.message }
+                .onFailure { voiceError = it.message ?: microphonePermissionError }
         } else {
-            attachmentError = microphonePermissionError
+            voiceError = microphonePermissionError
         }
     }
     val attachmentLauncher = rememberWearMultiFilePicker { uris ->
@@ -559,22 +570,31 @@ private fun ChatInputDialog(
                                     icon = Icons.Default.Mic,
                                     onClick = {
                                         if (transcriptionConfig.engine == TranscriptionEngine.SYSTEM) {
-                                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                                putExtra(
-                                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                                )
-                                                putExtra(
-                                                    RecognizerIntent.EXTRA_LANGUAGE,
-                                                    transcriptionConfig.languageCode
-                                                )
-                                                putExtra(RecognizerIntent.EXTRA_PROMPT, voicePrompt)
+                                            val available = runCatching {
+                                                SpeechRecognizer.isRecognitionAvailable(context)
+                                            }.getOrDefault(false)
+                                            if (!available) {
+                                                voiceError =
+                                                    "设备没有可用的系统语音识别服务，请在设置中改用其他转写引擎"
+                                            } else {
+                                                val intent =
+                                                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                                        putExtra(
+                                                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                                        )
+                                                        putExtra(
+                                                            RecognizerIntent.EXTRA_LANGUAGE,
+                                                            transcriptionConfig.languageCode
+                                                        )
+                                                        putExtra(RecognizerIntent.EXTRA_PROMPT, voicePrompt)
+                                                    }
+                                                runCatching { voiceLauncher.launch(intent) }
+                                                    .onFailure {
+                                                        voiceError =
+                                                            "无法启动系统语音识别，请在设置中改用其他转写引擎"
+                                                    }
                                             }
-                                            runCatching { voiceLauncher.launch(intent) }
-                                                .onFailure {
-                                                    attachmentError =
-                                                        "无法启动系统语音识别，请在设置中改用其他转写引擎"
-                                                }
                                         } else if (recording) {
                                             recording = false
                                             transcribing = true
@@ -585,7 +605,9 @@ private fun ChatInputDialog(
                                                             .filter(String::isNotBlank)
                                                             .joinToString(" ")
                                                     }
-                                                    .onFailure { attachmentError = it.message }
+                                                    .onFailure {
+                                                        voiceError = it.message ?: "转写失败，请重试"
+                                                    }
                                                 transcribing = false
                                             }
                                         } else {
@@ -669,5 +691,13 @@ private fun ChatInputDialog(
                 }
             }
         }
+    }
+    voiceError?.let { message ->
+        WearNoticeDialog(
+            visible = true,
+            title = "语音输入",
+            message = message,
+            onDismiss = { voiceError = null }
+        )
     }
 }

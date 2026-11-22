@@ -1,5 +1,8 @@
 <resources>
     <string-array name="changelog_entries">
+        <item>修复了 1.0.0 release 包首次启动闪退的问题</item>
+        <item>语音输入失败时改为弹窗提示，不再藏在输入面板底部</item>
+        <item>关于页分别列出上游仓库与本仓库地址</item>
         <item>增加了 DeepSeek 官方联网搜索与链接读取工具支持</item>
         <item>修复了聊天页面表冠滚动异常的问题</item>
         <item>修复了添加自定义搜索服务时可能崩溃的问题</item>
