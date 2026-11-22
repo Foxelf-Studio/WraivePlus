@@ -47,7 +47,7 @@ internal fun MarkdownMessageText(text: String, color: Color) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         segments.forEach { segment ->
             when (segment.kind) {
-                MarkdownSegmentKind.MARKDOWN -> NativeMarkdownText(segment.content, color)
+                MarkdownSegmentKind.MARKDOWN -> MarkdownBlockText(segment.content, color)
                 MarkdownSegmentKind.CODE -> CodeCard(segment.content, segment.language)
                 MarkdownSegmentKind.MERMAID -> MermaidCard(segment.content)
             }
@@ -56,7 +56,22 @@ internal fun MarkdownMessageText(text: String, color: Color) {
 }
 
 @Composable
-private fun NativeMarkdownText(markdown: String, color: Color) {
+private fun MarkdownBlockText(markdown: String, color: Color) {
+    val blocks = remember(markdown) { splitTableBlocks(markdown) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        blocks.forEach { block ->
+            when (block) {
+                is MarkdownBlock.Text -> if (block.markdown.isNotBlank()) {
+                    NativeMarkdownText(block.markdown, color)
+                }
+                is MarkdownBlock.Table -> MarkdownTable(block.table)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NativeMarkdownText(markdown: String, color: Color) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val textSize = MaterialTheme.typography.bodyMedium.fontSize

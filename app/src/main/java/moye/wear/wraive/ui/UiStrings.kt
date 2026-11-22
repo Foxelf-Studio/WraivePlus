@@ -113,6 +113,7 @@ private val englishStrings = mapOf(
     "从相册选择" to "Pick from gallery",
     "正在读取附件…" to "Reading attachments…",
     "图片无法显示" to "Image cannot be displayed",
+    "表格可左右滑动" to "Table scrolls horizontally",
     "无法启动系统语音识别，请在设置中改用其他转写引擎" to
         "System speech recognition is unavailable. Choose another transcription engine in settings.",
     "正在恢复草稿…" to "Restoring draft…",
