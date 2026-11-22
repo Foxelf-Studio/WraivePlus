@@ -19,7 +19,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "moye.wear.wraive"
+        applicationId = "moye.wear.wraive.fe"
         minSdk = 26
         targetSdk = 36
         versionCode = 9
