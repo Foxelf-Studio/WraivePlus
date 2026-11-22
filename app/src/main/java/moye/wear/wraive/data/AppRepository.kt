@@ -2,6 +2,7 @@ package moye.wear.wraive.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -804,7 +805,13 @@ class AppRepository(
     }
 
     private fun <T> load(kind: String, type: Class<T>, parentId: String? = null): List<T> =
-        database.query(kind, parentId).map { gson.fromJson(it, type) }
+        database.query(kind, parentId).mapNotNull { payload ->
+            // A single unreadable row (for example an export written by a build
+            // with different field names) must not take the whole app down.
+            runCatching { gson.fromJson(payload, type) }
+                .onFailure { Log.w(TAG, "Skipping unreadable $kind row", it) }
+                .getOrNull()
+        }
 
     private fun deleteOwnedAttachments(messages: List<ChatMessage>) {
         messages.flatMap(ChatMessage::attachments).forEach { attachment ->
@@ -821,6 +828,7 @@ class AppRepository(
     }
 
     private companion object {
+        const val TAG = "AppRepository"
         const val SECRET_PROVIDER = "provider"
         const val SECRET_SEARCH = "search"
         const val SECRET_SPEECH = "speech"

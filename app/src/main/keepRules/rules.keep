@@ -4,23 +4,32 @@
 # For more details, see
 #   https://d.android.com/r/tools/r8/keep-rules
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#} 
+# ---------------------------------------------------------------------------
+# Gson persistence
+# ---------------------------------------------------------------------------
+# Providers, models, assistants, conversations, messages and settings are all
+# stored as Gson JSON and read back by *field name*. R8 renames fields by
+# default, so a release build could not read data written by a debug build:
+# provider.id came back null and refreshProviders() crashed the process on the
+# first launch. Keep the whole persisted model package verbatim.
+-keep class moye.wear.wraive.model.** { *; }
 
-# Gson may deserialize ModelConfig.capabilities as raw strings after R8 removes
-# the field's generic element type. Keep every persisted capability enum value
-# available for the repository's compatibility conversion.
--keep enum moye.wear.wraive.model.ModelCapability { *; }
+# Payload classes that Gson serializes but that live outside the model package.
+-keep class moye.wear.wraive.data.ChatDraft { *; }
+-keep class moye.wear.wraive.data.CloudSecrets { *; }
+-keep class moye.wear.wraive.data.RepositorySnapshot { *; }
+-keep class moye.wear.wraive.data.BackupService$BackupBundle { *; }
 
-# Memory extraction uses valueOf and Gson; preserve every category in release builds.
--keep enum moye.wear.wraive.model.MemoryCategory { *; }
+# Gson reflects over generic signatures (List<Attachment>, Map<String, Any?>)
+# and reads @SerializedName at runtime; both must survive shrinking.
+-keepattributes Signature
+-keepattributes *Annotation*
+-keepattributes InnerClasses
+-keepattributes EnclosingMethod
 
-# Search configurations use Gson reflection to persist every selectable provider.
--keep enum moye.wear.wraive.model.SearchProviderType { *; }
+# TypeToken subclasses capture the generic type; keep them and their signatures.
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
 
 # Preserve SDK calls so the device's Wear implementation wins class loading.
 -keep class com.google.wear.input.WearHapticFeedbackConstants {

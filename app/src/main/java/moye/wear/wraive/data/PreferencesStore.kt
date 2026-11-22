@@ -1,6 +1,7 @@
 package moye.wear.wraive.data
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,15 +25,19 @@ class PreferencesStore(context: Context, private val gson: Gson) {
         _preferences.value = safe
     }
 
-    private fun load(): AppPreferences = store.getString(KEY, null)
-        ?.let { json ->
+    private fun load(): AppPreferences = runCatching {
+        store.getString(KEY, null)?.let { json ->
             val incoming = JsonParser.parseString(json).asJsonObject
             gson.toJsonTree(AppPreferences()).asJsonObject.entrySet().forEach { (name, value) ->
                 if (!incoming.has(name) || incoming.get(name).isJsonNull) incoming.add(name, value)
             }
             gson.fromJson(incoming, AppPreferences::class.java)
-        }
-        ?: AppPreferences()
+        } ?: AppPreferences()
+    }.getOrElse {
+        // Never let a corrupt settings blob block app startup.
+        Log.w("PreferencesStore", "Falling back to default preferences", it)
+        AppPreferences()
+    }
 
     internal fun normalized(value: AppPreferences): AppPreferences = value.copy(
         localeTag = value.localeTag.orEmpty().ifBlank { "system" },
