@@ -1,18 +1,14 @@
 <resources>
     <string-array name="changelog_entries">
-        <item>修复了 1.0.0 release 包首次启动闪退的问题</item>
-        <item>语音输入失败时改为弹窗提示，不再藏在输入面板底部</item>
-        <item>关于页分别列出上游仓库与本仓库地址</item>
-        <item>修复选图界面右滑返回后停留在会话页且无法触屏的问题</item>
-        <item>外观与行为新增“屏蔽右滑返回”开关</item>
-        <item>增加了 DeepSeek 官方联网搜索与链接读取工具支持</item>
-        <item>修复了聊天页面表冠滚动异常的问题</item>
-        <item>修复了添加自定义搜索服务时可能崩溃的问题</item>
-        <item>修复了自动提炼记忆或读取旧记忆后对话可能会报错的问题</item>
-        <item>修复了回复生成中及生成完成后数学公式显示延迟的问题</item>
-        <item>补全了小米Watch5的表冠振动</item>
-        <item>优化了多轮工具调用流程</item>
-        <item>优化了工具调用消息的显示样式</item>
-        <item>优化了展开思考内容后的流畅度</item>
+        <item>输入消息时若返回，会自动保存草稿；</item>
+        <item>输入消息页面新增选项“拍照”、“上传图片”①；</item>
+        <item>上传的附件支持一键清除；</item>
+        <item>语音输入新增支持 DeepSeek ASR 服务，填入 API Key 即可使用；</item>
+        <item>语音输入不支持系统识别的设备现不会直接闪退，改为报错提示；</item>
+        <item>AI 回复长表格不再因屏幕尺寸而被压缩，表格现已支持左右滑动；</item>
+        <item>导入模型供应商配置删除了原项目的“相机扫码”、“从图片读取”功能。改为导出和导入加密的配置文本；</item>
+        <item>设置~外观与行为~添加了“屏蔽右滑返回”功能；</item>
+        <item>软件强调色改为 #EEF3FF。</item>
+        <item>①部分设备无法使用原版的添加附件功能，此更改理论兼容所有安卓/WearOS 设备上传照片。</item>
     </string-array>
 </resources>
