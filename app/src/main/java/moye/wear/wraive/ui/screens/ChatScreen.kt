@@ -399,9 +399,21 @@ private fun ChatInputDialog(
     // fold of the input sheet, so users never noticed it.
     var voiceError by remember(visible) { mutableStateOf<String?>(null) }
     var recording by remember(visible) { mutableStateOf(false) }
+    var recordedSeconds by remember(visible) { mutableIntStateOf(0) }
     var transcribing by remember(visible) { mutableStateOf(false) }
     var readingAttachments by remember(visible) { mutableStateOf(false) }
     var inputFocusedOnce by remember(visible) { mutableStateOf(false) }
+    LaunchedEffect(recording) {
+        if (!recording) {
+            recordedSeconds = 0
+            return@LaunchedEffect
+        }
+        recordedSeconds = 0
+        while (true) {
+            delay(1000)
+            recordedSeconds++
+        }
+    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
@@ -561,7 +573,8 @@ private fun ChatInputDialog(
                                 WearActionButton(
                                     label = when {
                                         transcribing -> "正在转写…"
-                                        recording -> "停止并转写"
+                                        recording -> tr("停止并转写") + " · " +
+                                            tr("已录音%d秒").format(recordedSeconds)
                                         else -> "语音输入"
                                     },
                                     secondary = when (transcriptionConfig.engine) {

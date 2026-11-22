@@ -365,6 +365,7 @@ private val englishStrings = mapOf(
     "发送" to "Send",
     "停止" to "Stop",
     "停止并转写" to "Stop and transcribe",
+    "已录音%d秒" to "Recorded %ds",
     "正在转写…" to "Transcribing…",
     "说点什么" to "Say something",
     "输入" to "Input",
