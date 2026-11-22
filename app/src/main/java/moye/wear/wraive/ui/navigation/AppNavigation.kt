@@ -74,10 +74,6 @@ fun AppNavigation(graph: AppGraph) {
         initial = navController.currentBackStackEntry
     )
     val canGoBack = remember(backStackEntry) { navController.previousBackStackEntry != null }
-    // Wear Navigation's API 36+ back handler is disabled along with swipe-to-dismiss.
-    BackHandler(enabled = canGoBack && !DeviceCompatibility.supportsSwipeToDismiss) {
-        navController.popBackStack()
-    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val providers by graph.repository.providers.collectAsStateWithLifecycle()
@@ -96,6 +92,13 @@ fun AppNavigation(graph: AppGraph) {
     val networkProxy by graph.repository.networkProxyConfig.collectAsStateWithLifecycle()
     val transcriptionConfig by graph.repository.transcriptionConfig.collectAsStateWithLifecycle()
     val preferences by graph.preferences.preferences.collectAsStateWithLifecycle()
+    // Wear Navigation's API 36+ back handler is disabled along with swipe-to-dismiss, so
+    // provide one whenever the gesture is unavailable (unsupported device or turned off).
+    val swipeBackEnabled =
+        DeviceCompatibility.supportsSwipeToDismiss && !preferences.blockSwipeBack
+    BackHandler(enabled = canGoBack && !swipeBackEnabled) {
+        navController.popBackStack()
+    }
     val generating by graph.chatEngine.generatingConversationIds.collectAsStateWithLifecycle()
     val temporaryConversations = remember { mutableStateMapOf<String, Conversation>() }
     var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -163,7 +166,7 @@ fun AppNavigation(graph: AppGraph) {
         SwipeDismissableNavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            userSwipeEnabled = DeviceCompatibility.supportsSwipeToDismiss
+            userSwipeEnabled = swipeBackEnabled && !SwipeBackGuard.isBlocked
         ) {
             composable(Routes.HOME) {
                 ConversationsScreen(

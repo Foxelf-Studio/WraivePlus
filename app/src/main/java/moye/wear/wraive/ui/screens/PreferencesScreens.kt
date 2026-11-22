@@ -54,6 +54,13 @@ fun AppearanceScreen(
         }
     }
     WearListScreen("外观与行为") {
+        item {
+            PreferenceSwitch(
+                "屏蔽右滑返回",
+                "若设备不支持系统返回，请勿开启。",
+                preferences.blockSwipeBack
+            ) { checked -> onUpdate { it.copy(blockSwipeBack = checked) } }
+        }
         item { WearSectionHeader("显示") }
         item {
             PreferenceSwitch(

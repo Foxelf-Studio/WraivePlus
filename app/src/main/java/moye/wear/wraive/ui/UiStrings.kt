@@ -225,6 +225,9 @@ private val englishStrings = mapOf(
     "语音服务" to "Speech service",
     "动态配色" to "Dynamic color",
     "跟随手表系统主题" to "Follow the watch system theme",
+    "屏蔽右滑返回" to "Block swipe-back",
+    "若设备不支持系统返回，请勿开启。" to
+        "Do not enable this if the device has no system back gesture.",
     "动态表面配色" to "Dynamic surface colors",
     "表面跟随系统主题，强调色固定为品牌色" to
         "Surfaces follow the system theme; accents stay brand blue",

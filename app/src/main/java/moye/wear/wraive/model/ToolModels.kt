@@ -85,5 +85,7 @@ data class AppPreferences(
     val contextCompressionEnabled: Boolean = true,
     val searchResultLimit: Int = 5,
     val autoSpeakReplies: Boolean = false,
-    val customFontPath: String = ""
+    val customFontPath: String = "",
+    /** Disables the nav host's right-swipe gesture; system back still navigates. */
+    val blockSwipeBack: Boolean = false
 )

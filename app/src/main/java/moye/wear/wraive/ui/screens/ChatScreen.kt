@@ -105,6 +105,7 @@ import moye.wear.wraive.ui.components.rememberChatRotaryScrollableBehavior
 import moye.wear.wraive.ui.components.WearActionButton
 import moye.wear.wraive.ui.components.WearFisheyeScope
 import moye.wear.wraive.ui.components.WearNoticeDialog
+import moye.wear.wraive.ui.navigation.SwipeBackGuard
 import moye.wear.wraive.ui.components.WearImagePickerOverlay
 import moye.wear.wraive.ui.components.deleteCapturedPhoto
 import moye.wear.wraive.ui.components.rememberWearCameraCapture
@@ -473,6 +474,11 @@ private fun ChatInputDialog(
     val hasCamera = remember(context) {
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
     }
+    // Keep the nav host from consuming a right-swipe while this dialog window is up.
+    DisposableEffect(Unit) {
+        SwipeBackGuard.lock()
+        onDispose { SwipeBackGuard.unlock() }
+    }
     val inputBusy = recording || transcribing || readingAttachments || restoringDraft
     val canSend = !inputBusy && (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val submit = {
@@ -500,9 +506,6 @@ private fun ChatInputDialog(
             }
         }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            if (imagePicker.isActive) {
-                WearImagePickerOverlay(state = imagePicker, onImageSelected = addImage)
-            } else {
                 ScreenScaffold(
                     scrollState = listState,
                     edgeButton = {
@@ -689,6 +692,16 @@ private fun ChatInputDialog(
                         }
                     }
                 }
+        }
+    }
+    if (imagePicker.isActive) {
+        Dialog(
+            visible = true,
+            onDismissRequest = { imagePicker.dismiss() },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                WearImagePickerOverlay(state = imagePicker, onImageSelected = addImage)
             }
         }
     }
