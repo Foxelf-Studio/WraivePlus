@@ -1,14 +1,12 @@
 <resources>
     <string-array name="changelog_entries">
-        <item>输入消息时若返回，会自动保存草稿；</item>
-        <item>输入消息页面新增选项“拍照”、“上传图片”①；</item>
-        <item>上传的附件支持一键清除；</item>
-        <item>语音输入新增支持 DeepSeek ASR 服务，填入 API Key 即可使用；</item>
-        <item>语音输入不支持系统识别的设备现不会直接闪退，改为报错提示；</item>
-        <item>AI 回复长表格不再因屏幕尺寸而被压缩，表格现已支持左右滑动；</item>
-        <item>导入模型供应商配置删除了原项目的“相机扫码”、“从图片读取”功能。改为导出和导入加密的配置文本；</item>
-        <item>设置~外观与行为~添加了“屏蔽右滑返回”功能；</item>
-        <item>软件强调色改为 #EEF3FF。</item>
-        <item>①部分设备无法使用原版的添加附件功能，此更改理论兼容所有安卓/WearOS 设备上传照片。</item>
+        <item>历史对话按日期折叠：今天之前默认收起，点击展开 5 条，继续下滑每次再展开 5 条；</item>
+        <item>首页新增供应商余额卡片，支持 DeepSeek、OpenRouter、SiliconFlow、StepFun、Novita 与小米 MiMo，右侧按钮手动刷新；</item>
+        <item>新增深浅色主题切换，位于“设置~外观与行为”第二项，可选跟随系统、浅色、深色；</item>
+        <item>新增显示大小调节（0.8x–1.3x），默认 1.0x；</item>
+        <item>对话行为新增“输入页不自动弹出输入法”开关；</item>
+        <item>图片预览支持双击放大、双指缩放与拖动；</item>
+        <item>Wear OS 改用系统文件/图片选择器，修复手表无法授予存储权限、设置里找不到权限入口的问题；</item>
+        <item>对话页“回到底部”按钮改为 WearQQ Next 同款：52dp 圆形、未读数提示、淡入缩放动画；</item>
     </string-array>
 </resources>
