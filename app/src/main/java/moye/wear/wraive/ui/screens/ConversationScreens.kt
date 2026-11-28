@@ -9,6 +9,8 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
@@ -44,8 +46,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.OutputStream
 import moye.wear.wraive.model.Conversation
-import moye.wear.wraive.network.BalanceState
-import moye.wear.wraive.ui.components.BalanceCard
 import moye.wear.wraive.ui.components.ConfirmActionDialog
 import moye.wear.wraive.ui.components.FullScreenEditor
 import moye.wear.wraive.ui.components.WearTextField
@@ -65,10 +65,7 @@ fun ConversationsScreen(
     archived: Boolean = false,
     onMenu: (() -> Unit)? = null,
     onNewConversation: (() -> Unit)? = null,
-    newConversationHint: String? = null,
-    balanceProviderName: String? = null,
-    balanceState: BalanceState = BalanceState.Idle,
-    onRefreshBalance: (() -> Unit)? = null
+    newConversationHint: String? = null
 ) {
     val listState = rememberTransformingLazyColumnState()
     val scope = rememberCoroutineScope()
@@ -113,11 +110,6 @@ fun ConversationsScreen(
                 )
             }
         }
-        if (!archived && balanceProviderName != null && onRefreshBalance != null) {
-            item(key = "balance") {
-                BalanceCard(balanceProviderName, balanceState, onRefreshBalance)
-            }
-        }
         if (conversations.isEmpty()) {
             item {
                 if (archived) {
@@ -157,17 +149,23 @@ fun ConversationsScreen(
                 }
             }
             if (older.isNotEmpty()) {
-                if (olderShown == 0) {
-                    item(key = "older-collapsed") {
-                        WearActionButton(
-                            label = "展开更早的对话",
-                            secondary = tr("共 %d 条").format(older.size),
-                            onClick = { olderShown = 5 }
-                        )
-                    }
-                } else {
-                    item(key = "older-header") { WearSectionHeader("更早") }
+                item(key = "older-toggle") {
+                    val expanded = olderShown > 0
+                    WearActionButton(
+                        label = if (expanded) "折叠先前的会话" else "展开先前的会话",
+                        secondary = tr("共 %d 条").format(older.size),
+                        icon = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        onClick = { olderShown = if (expanded) 0 else 5 }
+                    )
+                }
+                if (olderShown > 0) {
+                    var currentDay: String? = null
                     older.take(olderShown).forEach { conversation ->
+                        val day = dayLabel(conversation.updatedAt)
+                        if (day != currentDay) {
+                            item(key = "day-$day") { WearSectionHeader(day) }
+                            currentDay = day
+                        }
                         item(key = conversation.id) {
                             ConversationRow(
                                 conversation, generating, deleteLabel, manageLabel, listState,
@@ -287,6 +285,21 @@ private fun ConversationRow(
                 )
             }
         )
+    }
+}
+
+private fun dayLabel(millis: Long): String {
+    val zone = java.time.ZoneId.systemDefault()
+    val date = java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+    val today = java.time.LocalDate.now(zone)
+    return when (java.time.temporal.ChronoUnit.DAYS.between(date, today).toInt()) {
+        1 -> "昨天"
+        2 -> "前天"
+        else -> if (date.year == today.year) {
+            "%d月%d日".format(date.monthValue, date.dayOfMonth)
+        } else {
+            "%d年%d月%d日".format(date.year, date.monthValue, date.dayOfMonth)
+        }
     }
 }
 

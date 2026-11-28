@@ -1,5 +1,8 @@
 package moye.wear.wraive.ui.screens
 
+import moye.wear.wraive.network.BalanceState
+import moye.wear.wraive.ui.components.BalanceCard
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
@@ -16,9 +19,17 @@ fun MainMenuScreen(
     newConversationHint: String?,
     onOpenArchive: () -> Unit,
     onOpenAssistants: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    balanceProviderName: String? = null,
+    balanceState: BalanceState = BalanceState.Idle,
+    onRefreshBalance: (() -> Unit)? = null
 ) {
     WearListScreen("菜单") {
+        if (balanceProviderName != null && onRefreshBalance != null) {
+            item(key = "balance") {
+                BalanceCard(balanceProviderName, balanceState, onRefreshBalance)
+            }
+        }
         item(key = "new-conversation") {
             WearActionButton("新对话", { onNewConversation(false) },
                 icon = Icons.Default.Add, primary = true,

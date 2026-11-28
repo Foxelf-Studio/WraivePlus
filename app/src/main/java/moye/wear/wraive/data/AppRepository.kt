@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,10 +96,31 @@ class AppRepository(
     private val _transcriptionConfig = MutableStateFlow(TranscriptionConfig())
     val transcriptionConfig: StateFlow<TranscriptionConfig> = _transcriptionConfig
 
+    private val _loaded = MutableStateFlow(false)
+    /** True once the first database read finished, even if some sections failed. */
+    val loaded: StateFlow<Boolean> = _loaded
+
     init {
         scope.launch {
-            refreshAll()
-            seedDefaults()
+            runCatching { refreshAll() }
+            // A transient read/keystore failure would otherwise leave the provider
+            // chain empty until the process restarts, which reads as "connect a provider".
+            if (_providers.value.isEmpty()) {
+                delay(1_000)
+                runCatching { refreshProviders() }
+                runCatching { refreshModels() }
+                runCatching { refreshAssistants() }
+            }
+            runCatching { seedDefaults() }
+            _loaded.value = true
+        }
+    }
+
+    /** Re-reads persisted state; used when startup loading failed or was killed early. */
+    fun refresh() {
+        scope.launch {
+            runCatching { refreshAll() }
+            _loaded.value = true
         }
     }
 
@@ -594,27 +616,31 @@ class AppRepository(
     }
 
     private suspend fun refreshAll() {
-        refreshProviders()
-        refreshModels()
-        refreshAssistants()
-        refreshConversations()
-        refreshMemories()
-        refreshWorldBooks()
-        refreshQuickPhrases()
-        refreshSearchProviders()
-        refreshMcpServers()
-        refreshPromptTransforms()
-        refreshSpeechConfig()
-        refreshRequestLogs()
-        refreshCloudBackupConfig()
-        refreshNetworkProxyConfig()
-        refreshTranscriptionConfig()
+        // One corrupted row or a keystore hiccup must not leave every list empty.
+        listOf<() -> Unit>(
+            ::refreshProviders,
+            ::refreshModels,
+            ::refreshAssistants,
+            ::refreshConversations,
+            ::refreshMemories,
+            ::refreshWorldBooks,
+            ::refreshQuickPhrases,
+            ::refreshSearchProviders,
+            ::refreshMcpServers,
+            ::refreshPromptTransforms,
+            ::refreshSpeechConfig,
+            ::refreshRequestLogs,
+            ::refreshCloudBackupConfig,
+            ::refreshNetworkProxyConfig,
+            ::refreshTranscriptionConfig
+        ).forEach { section -> runCatching { section() } }
     }
 
     private fun refreshProviders() {
         _providers.value = load(WraiveDatabase.KIND_PROVIDER, ProviderConfig::class.java)
             .map { provider ->
-                val keys = secrets.get(SECRET_PROVIDER, provider.id)
+                val keys = runCatching { secrets.get(SECRET_PROVIDER, provider.id) }
+                    .getOrDefault("")
                     .lineSequence().map(String::trim).filter(String::isNotBlank).distinct().toList()
                 val rotation = runCatching { provider.keyRotation.name }
                     .mapCatching(moye.wear.wraive.model.KeyRotationStrategy::valueOf)

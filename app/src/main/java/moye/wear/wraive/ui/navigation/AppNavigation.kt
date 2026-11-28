@@ -24,6 +24,7 @@ import androidx.core.content.FileProvider
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moye.wear.wraive.AppGraph
 import moye.wear.wraive.audio.SpeechController
@@ -149,10 +150,19 @@ fun AppNavigation(graph: AppGraph) {
             readyModels.any { it.providerId == selected.providerId && it.id == selected.modelId }
         } == true
     }
+    val dataLoaded by graph.repository.loaded.collectAsStateWithLifecycle()
+    // Do not flash "connect a provider" while the first database read is still running.
     val newConversationHint = when {
+        !dataLoaded -> null
         readyModels.isEmpty() -> "先连接模型服务"
         readyAssistants.isEmpty() -> "先为助手选择模型"
         else -> null
+    }
+    LaunchedEffect(Unit) {
+        if (!graph.repository.loaded.value) {
+            delay(3_000)
+            if (!graph.repository.loaded.value) graph.repository.refresh()
+        }
     }
     var choosingAssistant by remember { mutableStateOf(false) }
     var newConversationTemporary by remember { mutableStateOf(false) }
@@ -210,10 +220,7 @@ fun AppNavigation(graph: AppGraph) {
                     onDelete = ::deleteConversation,
                     onMenu = { navController.navigate(Routes.MENU) },
                     onNewConversation = { startConversation(false) },
-                    newConversationHint = newConversationHint,
-                    balanceProviderName = balanceProvider?.name,
-                    balanceState = balanceState,
-                    onRefreshBalance = refreshBalance
+                    newConversationHint = newConversationHint
                 )
             }
             composable(Routes.MENU) {
@@ -222,7 +229,10 @@ fun AppNavigation(graph: AppGraph) {
                     newConversationHint = newConversationHint,
                     onOpenArchive = { navController.navigate(Routes.ARCHIVE) },
                     onOpenAssistants = { navController.navigate(Routes.ASSISTANTS) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    balanceProviderName = balanceProvider?.name,
+                    balanceState = balanceState,
+                    onRefreshBalance = refreshBalance
                 )
             }
             composable(Routes.ARCHIVE) {
