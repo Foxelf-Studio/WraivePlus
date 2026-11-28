@@ -9,6 +9,14 @@ import android.speech.SpeechRecognizer
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -79,8 +88,6 @@ import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonDefaults
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.FilledTonalIconButton
-import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -164,6 +171,16 @@ fun ChatScreen(
     val context = LocalContext.current
     val floatingButtonBottom = (configuration.screenHeightDp.dp * 0.25f).coerceIn(36.dp, 52.dp)
     var followLatest by remember(conversation.id) { mutableStateOf(true) }
+    // Mirrors WearQQ Next: the jump button turns into an unread counter while scrolled up.
+    var pendingBelow by remember(conversation.id) { mutableIntStateOf(0) }
+    var knownMessageCount by remember(conversation.id) { mutableIntStateOf(messages.size) }
+    LaunchedEffect(messages.size, followLatest) {
+        if (messages.size > knownMessageCount && !followLatest) {
+            pendingBelow += messages.size - knownMessageCount
+        }
+        if (followLatest) pendingBelow = 0
+        knownMessageCount = messages.size
+    }
     var lastMessageLayoutRevision by remember(conversation.id) { mutableIntStateOf(0) }
     var expandedReasoningIds by rememberSaveable(conversation.id) { mutableStateOf(emptyList<String>()) }
     val chatItems = remember(messages, expandedReasoningIds, showReasoning) {
@@ -330,24 +347,49 @@ fun ChatScreen(
                 item(key = "chat-bottom") { Spacer(Modifier.fillMaxWidth().height(8.dp).testTag("chat-bottom")) }
             }
         }
-        if (!followLatest && !state.isScrollInProgress) {
-            FilledTonalIconButton(
-                onClick = {
-                    scope.launch {
-                        state.scrollToItem(bottomIndex)
-                        followLatest = true
+        // Floating jump control copied from WearQQ Next: 52dp circle, 16dp arrow,
+        // unread count instead of the arrow, fade + scale in/out.
+        AnimatedVisibility(
+            visible = !followLatest && !state.isScrollInProgress,
+            enter = fadeIn(tween(140)) +
+                scaleIn(initialScale = 0.5f, animationSpec = tween(140)),
+            exit = fadeOut(tween(120)) +
+                scaleOut(targetScale = 0.72f, animationSpec = tween(120)),
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .padding(
+                    end = if (configuration.isScreenRound) 16.dp else 4.dp,
+                    bottom = floatingButtonBottom + 4.dp
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .requiredSize(52.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .clickable {
+                        scope.launch {
+                            state.animateScrollToItem(bottomIndex)
+                            followLatest = true
+                            pendingBelow = 0
+                        }
                     }
-                },
-                modifier = Modifier.align(Alignment.BottomEnd)
-                    .padding(
-                        end = if (configuration.isScreenRound) 16.dp else 4.dp,
-                        bottom = floatingButtonBottom
-                    )
-                    .size(40.dp)
                     .testTag("chat-jump-to-bottom"),
-                shapes = IconButtonDefaults.shapes(CircleShape)
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = tr("回到最新消息"))
+                if (pendingBelow > 0) {
+                    Text(
+                        text = if (pendingBelow > 99) "99+" else pendingBelow.toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = tr("回到最新消息"),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
