@@ -20,7 +20,9 @@ class MainActivity : ComponentActivity() {
             WraiveTheme(
                 dynamicColor = preferences.dynamicColor,
                 customFontPath = preferences.customFontPath,
-                localeTag = preferences.localeTag
+                localeTag = preferences.localeTag,
+                themeMode = preferences.themeMode,
+                displayScale = preferences.displayScale
             ) {
                 AppScaffold { AppNavigation(graph) }
             }

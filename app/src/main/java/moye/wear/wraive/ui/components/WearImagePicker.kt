@@ -45,6 +45,7 @@ import androidx.wear.compose.material3.Text
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moye.wear.wraive.compat.DeviceCompatibility
 import moye.wear.wraive.ui.tr
 import java.text.DateFormat
 import java.util.Date
@@ -104,7 +105,11 @@ fun rememberWearImagePicker(onImageSelected: (Uri) -> Unit): WearImagePickerStat
     SideEffect {
         state.launchAction = {
             state.error = null
-            if (hasImageAccess(context)) {
+            // Wear OS has no user-facing media permission, so per-URI access through the
+            // system picker is the only path that works there.
+            if (DeviceCompatibility.isWatch(context)) {
+                state.systemPickerAction?.invoke()
+            } else if (hasImageAccess(context)) {
                 state.stage = ImagePickerStage.GALLERY
             } else {
                 permissionLauncher.launch(imagePermissions())
@@ -188,8 +193,10 @@ private fun WearImagePermissionScreen(state: WearImagePickerState) {
                 "授权后可浏览手表相册。部分手表无法授权时，可以改用系统图片选择器。"
             )
         }
-        item { WearActionButton("重新授权", { state.retryAction?.invoke() }, primary = true) }
-        item { WearActionButton("打开应用设置", { openAppPermissionSettings(context) }) }
+        if (!DeviceCompatibility.isWatch(context)) {
+            item { WearActionButton("重新授权", { state.retryAction?.invoke() }, primary = true) }
+            item { WearActionButton("打开应用设置", { openAppPermissionSettings(context) }) }
+        }
         item { WearActionButton("系统图片选择器", { state.systemPickerAction?.invoke() }) }
         state.error?.let { message ->
             item { Text(tr(message), color = MaterialTheme.colorScheme.error) }

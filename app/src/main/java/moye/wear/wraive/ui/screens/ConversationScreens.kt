@@ -17,15 +17,18 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnState
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.EdgeButton
@@ -36,15 +39,20 @@ import androidx.wear.compose.material3.RevealValue
 import androidx.wear.compose.material3.SwipeToReveal
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.rememberRevealState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.OutputStream
 import moye.wear.wraive.model.Conversation
+import moye.wear.wraive.network.BalanceState
+import moye.wear.wraive.ui.components.BalanceCard
 import moye.wear.wraive.ui.components.ConfirmActionDialog
 import moye.wear.wraive.ui.components.FullScreenEditor
 import moye.wear.wraive.ui.components.WearTextField
 import moye.wear.wraive.ui.components.WearActionButton
 import moye.wear.wraive.ui.components.WearListScreen
 import moye.wear.wraive.ui.components.WearInfoCard
+import moye.wear.wraive.ui.components.WearSectionHeader
 import moye.wear.wraive.ui.tr
 
 @Composable
@@ -57,7 +65,10 @@ fun ConversationsScreen(
     archived: Boolean = false,
     onMenu: (() -> Unit)? = null,
     onNewConversation: (() -> Unit)? = null,
-    newConversationHint: String? = null
+    newConversationHint: String? = null,
+    balanceProviderName: String? = null,
+    balanceState: BalanceState = BalanceState.Idle,
+    onRefreshBalance: (() -> Unit)? = null
 ) {
     val listState = rememberTransformingLazyColumnState()
     val scope = rememberCoroutineScope()
@@ -65,6 +76,21 @@ fun ConversationsScreen(
     val manageLabel = tr("管理会话")
     var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
     var pendingRevealState by remember { mutableStateOf<RevealState?>(null) }
+    val sorted = conversations.sortedWith(
+        compareByDescending<Conversation> { it.pinned }.thenByDescending { it.updatedAt }
+    )
+    val requestDeleteRow: (Conversation, RevealState) -> Unit = { conversation, revealState ->
+        pendingDelete = conversation
+        pendingRevealState = revealState
+    }
+
+    val pinned = sorted.filter { it.pinned }
+    val unpinned = sorted.filterNot { it.pinned }
+    val todayStart = remember { startOfTodayMillis() }
+    val today = unpinned.filter { it.updatedAt >= todayStart }
+    val older = unpinned.filter { it.updatedAt < todayStart }
+    var olderShown by remember { mutableIntStateOf(0) }
+
     WearListScreen(
         title = if (archived) "归档会话" else "会话",
         scrollState = listState,
@@ -87,6 +113,11 @@ fun ConversationsScreen(
                 )
             }
         }
+        if (!archived && balanceProviderName != null && onRefreshBalance != null) {
+            item(key = "balance") {
+                BalanceCard(balanceProviderName, balanceState, onRefreshBalance)
+            }
+        }
         if (conversations.isEmpty()) {
             item {
                 if (archived) {
@@ -96,82 +127,70 @@ fun ConversationsScreen(
                 }
             }
         }
-        conversations.sortedWith(
-            compareByDescending<Conversation> { it.pinned }.thenByDescending { it.updatedAt }
-        ).forEach { conversation ->
-            item(key = conversation.id) {
-                val revealState = rememberRevealState()
-                val requestDelete = {
-                    pendingDelete = conversation
-                    pendingRevealState = revealState
+        if (archived) {
+            sorted.forEach { conversation ->
+                item(key = conversation.id) {
+                    ConversationRow(
+                        conversation, generating, deleteLabel, manageLabel, listState,
+                        onOpen, onActions, requestDeleteRow
+                    )
                 }
-                LaunchedEffect(listState.isScrollInProgress) {
-                    if (
-                        listState.isScrollInProgress &&
-                        revealState.currentValue != RevealValue.Covered
-                    ) {
-                        revealState.animateTo(RevealValue.Covered)
+            }
+        } else {
+            pinned.forEach { conversation ->
+                item(key = conversation.id) {
+                    ConversationRow(
+                        conversation, generating, deleteLabel, manageLabel, listState,
+                        onOpen, onActions, requestDeleteRow
+                    )
+                }
+            }
+            if (older.isNotEmpty() && today.isNotEmpty()) {
+                item(key = "today-header") { WearSectionHeader("今天") }
+            }
+            today.forEach { conversation ->
+                item(key = conversation.id) {
+                    ConversationRow(
+                        conversation, generating, deleteLabel, manageLabel, listState,
+                        onOpen, onActions, requestDeleteRow
+                    )
+                }
+            }
+            if (older.isNotEmpty()) {
+                if (olderShown == 0) {
+                    item(key = "older-collapsed") {
+                        WearActionButton(
+                            label = "展开更早的对话",
+                            secondary = tr("共 %d 条").format(older.size),
+                            onClick = { olderShown = 5 }
+                        )
                     }
-                }
-                SwipeToReveal(
-                    revealState = revealState,
-                    revealDirection = RevealDirection.RightToLeft,
-                    onSwipePrimaryAction = requestDelete,
-                    primaryAction = {
-                        PrimaryActionButton(
-                            onClick = requestDelete,
-                            icon = {
-                                Icon(Icons.Default.Delete, contentDescription = null)
-                            },
-                            text = { Text(deleteLabel) },
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    },
-                    secondaryAction = {
-                        SecondaryActionButton(
-                            onClick = {
-                                scope.launch {
-                                    revealState.snapTo(RevealValue.Covered)
-                                    onActions(conversation)
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    Icons.Default.MoreVert,
-                                    contentDescription = manageLabel
-                                )
-                            }
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    WearActionButton(
-                        label = conversation.title,
-                        secondary = if (conversation.id in generating) {
-                            "正在生成…"
-                        } else {
-                            conversation.lastMessagePreview
-                        },
-                        icon = when {
-                            conversation.pinned -> Icons.Default.PushPin
-                            conversation.archived -> Icons.Default.Archive
-                            else -> Icons.AutoMirrored.Filled.Chat
-                        },
-                        onClick = { onOpen(conversation) },
-                        modifier = Modifier.semantics {
-                            customActions = listOf(
-                                CustomAccessibilityAction(deleteLabel) {
-                                    requestDelete()
-                                    true
-                                },
-                                CustomAccessibilityAction(manageLabel) {
-                                    onActions(conversation)
-                                    true
-                                }
+                } else {
+                    item(key = "older-header") { WearSectionHeader("更早") }
+                    older.take(olderShown).forEach { conversation ->
+                        item(key = conversation.id) {
+                            ConversationRow(
+                                conversation, generating, deleteLabel, manageLabel, listState,
+                                onOpen, onActions, requestDeleteRow
                             )
                         }
-                    )
+                    }
+                    if (olderShown < older.size) {
+                        item(key = "older-more") {
+                            // A scroll past this footer pulls in the next page; without
+                            // scrolling the button stays available for an explicit tap.
+                            LaunchedEffect(older.size, olderShown) {
+                                snapshotFlow { listState.isScrollInProgress }.first { it }
+                                delay(250)
+                                olderShown = (olderShown + 5).coerceAtMost(older.size)
+                            }
+                            WearActionButton(
+                                label = "继续展开 5 条",
+                                secondary = tr("还剩 %d 条").format(older.size - olderShown),
+                                onClick = { olderShown = (olderShown + 5).coerceAtMost(older.size) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -194,6 +213,90 @@ fun ConversationsScreen(
             conversation?.let(onDelete)
         }
     )
+}
+
+
+@Composable
+private fun ConversationRow(
+    conversation: Conversation,
+    generating: Set<String>,
+    deleteLabel: String,
+    manageLabel: String,
+    listState: TransformingLazyColumnState,
+    onOpen: (Conversation) -> Unit,
+    onActions: (Conversation) -> Unit,
+    onRequestDelete: (Conversation, RevealState) -> Unit
+) {
+    val revealState = rememberRevealState()
+    val scope = rememberCoroutineScope()
+    val requestDelete = { onRequestDelete(conversation, revealState) }
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && revealState.currentValue != RevealValue.Covered) {
+            revealState.animateTo(RevealValue.Covered)
+        }
+    }
+    SwipeToReveal(
+        revealState = revealState,
+        revealDirection = RevealDirection.RightToLeft,
+        onSwipePrimaryAction = requestDelete,
+        primaryAction = {
+            PrimaryActionButton(
+                onClick = requestDelete,
+                icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                text = { Text(deleteLabel) },
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            )
+        },
+        secondaryAction = {
+            SecondaryActionButton(
+                onClick = {
+                    scope.launch {
+                        revealState.snapTo(RevealValue.Covered)
+                        onActions(conversation)
+                    }
+                },
+                icon = { Icon(Icons.Default.MoreVert, contentDescription = manageLabel) }
+            )
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        WearActionButton(
+            label = conversation.title,
+            secondary = if (conversation.id in generating) {
+                "正在生成…"
+            } else {
+                conversation.lastMessagePreview
+            },
+            icon = when {
+                conversation.pinned -> Icons.Default.PushPin
+                conversation.archived -> Icons.Default.Archive
+                else -> Icons.AutoMirrored.Filled.Chat
+            },
+            onClick = { onOpen(conversation) },
+            modifier = Modifier.semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(deleteLabel) {
+                        requestDelete()
+                        true
+                    },
+                    CustomAccessibilityAction(manageLabel) {
+                        onActions(conversation)
+                        true
+                    }
+                )
+            }
+        )
+    }
+}
+
+private fun startOfTodayMillis(): Long {
+    val calendar = java.util.Calendar.getInstance()
+    calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+    calendar.set(java.util.Calendar.MINUTE, 0)
+    calendar.set(java.util.Calendar.SECOND, 0)
+    calendar.set(java.util.Calendar.MILLISECOND, 0)
+    return calendar.timeInMillis
 }
 
 @Composable

@@ -144,6 +144,7 @@ fun ChatScreen(
     generating: Boolean,
     showReasoning: Boolean,
     markdownEnabled: Boolean,
+    autoFocusInput: Boolean = true,
     readAttachment: suspend (Uri) -> List<Attachment>,
     transcriptionConfig: TranscriptionConfig,
     startRecording: (TranscriptionConfig) -> Unit,
@@ -352,6 +353,7 @@ fun ChatScreen(
     }
     ChatInputDialog(
         visible = showInput,
+        autoFocusInput = autoFocusInput,
         draft = draft,
         restoringDraft = restoringDraft,
         quickPhrases = quickPhrases.filter {
@@ -382,6 +384,7 @@ fun ChatScreen(
 @Composable
 private fun ChatInputDialog(
     visible: Boolean,
+    autoFocusInput: Boolean,
     draft: ComposerDraftState,
     restoringDraft: Boolean,
     quickPhrases: List<QuickPhrase>,
@@ -510,8 +513,8 @@ private fun ChatInputDialog(
         },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        LaunchedEffect(imagePicker.isActive) {
-            if (!imagePicker.isActive && !inputFocusedOnce) {
+        LaunchedEffect(imagePicker.isActive, autoFocusInput) {
+            if (autoFocusInput && !imagePicker.isActive && !inputFocusedOnce) {
                 delay(200)
                 focusRequester.requestFocus()
                 inputFocusedOnce = true

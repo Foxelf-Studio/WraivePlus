@@ -29,6 +29,8 @@ import moye.wear.wraive.AppGraph
 import moye.wear.wraive.audio.SpeechController
 import moye.wear.wraive.compat.DeviceCompatibility
 import moye.wear.wraive.model.ChatMessage
+import moye.wear.wraive.network.BalanceClient
+import moye.wear.wraive.network.BalanceState
 import moye.wear.wraive.model.AttachmentKind
 import moye.wear.wraive.model.AssistantProfile
 import moye.wear.wraive.model.Conversation
@@ -100,6 +102,37 @@ fun AppNavigation(graph: AppGraph) {
         navController.popBackStack()
     }
     val generating by graph.chatEngine.generatingConversationIds.collectAsStateWithLifecycle()
+    // Balance card follows the assistant of the most recent conversation.
+    val balanceAssistant = remember(conversations, assistants) {
+        val latest = conversations.filterNot { it.archived }.maxByOrNull { it.updatedAt }
+        assistants.firstOrNull { it.id == latest?.assistantId } ?: assistants.firstOrNull()
+    }
+    val balanceProvider = remember(balanceAssistant, models, providers) {
+        val ref = balanceAssistant?.model
+        val model = ref?.let { value ->
+            models.firstOrNull { it.id == value.modelId && it.providerId == value.providerId }
+                ?: models.firstOrNull { it.id == value.modelId }
+        }
+        model?.let { value -> providers.firstOrNull { it.id == value.providerId } }
+    }
+    var balanceState by remember { mutableStateOf<BalanceState>(BalanceState.Idle) }
+    LaunchedEffect(balanceProvider?.id) {
+        val provider = balanceProvider
+        if (provider == null) {
+            balanceState = BalanceState.Idle
+        } else {
+            balanceState = BalanceState.Loading
+            balanceState = BalanceClient.query(provider)
+        }
+    }
+    val refreshBalance: () -> Unit = {
+        balanceProvider?.let { provider ->
+            scope.launch {
+                balanceState = BalanceState.Loading
+                balanceState = BalanceClient.query(provider)
+            }
+        }
+    }
     val temporaryConversations = remember { mutableStateMapOf<String, Conversation>() }
     var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var autoOpenAssistantSetup by remember { mutableStateOf(false) }
@@ -177,7 +210,10 @@ fun AppNavigation(graph: AppGraph) {
                     onDelete = ::deleteConversation,
                     onMenu = { navController.navigate(Routes.MENU) },
                     onNewConversation = { startConversation(false) },
-                    newConversationHint = newConversationHint
+                    newConversationHint = newConversationHint,
+                    balanceProviderName = balanceProvider?.name,
+                    balanceState = balanceState,
+                    onRefreshBalance = refreshBalance
                 )
             }
             composable(Routes.MENU) {
@@ -287,6 +323,7 @@ fun AppNavigation(graph: AppGraph) {
                         generating = conversation.id in generating,
                         showReasoning = preferences.showReasoning,
                         markdownEnabled = preferences.markdownEnabled,
+                        autoFocusInput = preferences.autoFocusInput,
                         readAttachment = graph.attachmentReader::read,
                         transcriptionConfig = transcriptionConfig,
                         startRecording = graph.transcriptionController::startRecording,

@@ -4,6 +4,9 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
@@ -16,10 +19,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import java.io.File
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
 import kotlinx.coroutines.launch
@@ -61,7 +66,40 @@ fun AppearanceScreen(
                 preferences.blockSwipeBack
             ) { checked -> onUpdate { it.copy(blockSwipeBack = checked) } }
         }
+        item {
+            WearSelectionField("深浅色", preferences.themeMode, listOf("system", "light", "dark"),
+                onSelect = { value -> onUpdate { it.copy(themeMode = value) } },
+                optionLabel = { value -> when (value) {
+                    "light" -> "浅色"
+                    "dark" -> "深色"
+                    else -> "跟随系统"
+                } })
+        }
         item { WearSectionHeader("显示") }
+        item {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(tr("显示大小"), style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.1fx", preferences.displayScale),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Slider(
+                    value = Math.round(preferences.displayScale * 100f),
+                    onValueChange = { value ->
+                        onUpdate { it.copy(displayScale = value / 100f) }
+                    },
+                    valueProgression = 80..130 step 10,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
         item {
             PreferenceSwitch(
                 "动态表面配色",
@@ -121,6 +159,13 @@ fun AppearanceScreen(
             ) { checked -> onUpdate { it.copy(markdownEnabled = checked) } }
         }
         item { WearSectionHeader("对话行为") }
+        item {
+            PreferenceSwitch(
+                "输入页不自动弹出输入法",
+                "打开输入页时保持键盘收起，手动点击输入框才聚焦",
+                !preferences.autoFocusInput
+            ) { checked -> onUpdate { it.copy(autoFocusInput = !checked) } }
+        }
         item {
             PreferenceSwitch(
                 "后台生成",

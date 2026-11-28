@@ -87,5 +87,11 @@ data class AppPreferences(
     val autoSpeakReplies: Boolean = false,
     val customFontPath: String = "",
     /** Disables the nav host's right-swipe gesture; system back still navigates. */
-    val blockSwipeBack: Boolean = false
+    val blockSwipeBack: Boolean = false,
+    /** "system", "light" or "dark". */
+    val themeMode: String = "system",
+    /** UI scale applied through LocalDensity; 1f is the design size. */
+    val displayScale: Float = 1f,
+    /** Focus the composer and show the keyboard as soon as the input sheet opens. */
+    val autoFocusInput: Boolean = true
 )

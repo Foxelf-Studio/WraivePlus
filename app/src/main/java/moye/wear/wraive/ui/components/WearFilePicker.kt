@@ -31,6 +31,7 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moye.wear.wraive.compat.DeviceCompatibility
 import moye.wear.wraive.ui.tr
 import java.io.File
 
@@ -52,6 +53,15 @@ private fun rememberWearFilePickerLauncher(
     onFilesSelected: (List<Uri>) -> Unit
 ): WearFilePickerLauncher {
     var requestedTypes by remember { mutableStateOf<Array<String>?>(null) }
+    val context = LocalContext.current
+    val watch = remember(context) { DeviceCompatibility.isWatch(context) }
+    val directSingle = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { onFilesSelected(listOf(it)) }
+    }
+    val directMulti =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isNotEmpty()) onFilesSelected(uris)
+        }
     requestedTypes?.let { mimeTypes ->
         WearFilePickerDialog(
             mimeTypes = mimeTypes,
@@ -63,7 +73,16 @@ private fun rememberWearFilePickerLauncher(
             }
         )
     }
-    return WearFilePickerLauncher { requestedTypes = it }
+    return WearFilePickerLauncher { types ->
+        // Wear OS cannot grant all-files access, so go straight to the system picker.
+        if (watch) {
+            runCatching {
+                if (multiple) directMulti.launch(types) else directSingle.launch(types)
+            }
+        } else {
+            requestedTypes = types
+        }
+    }
 }
 
 @Composable
